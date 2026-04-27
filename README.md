@@ -60,9 +60,11 @@ Frontend runs on Vite and proxies `/api` to `http://localhost:4000`.
 
 ## Deploy frontend on Vercel
 
-The repo includes [`vercel.json`](vercel.json) with `"rootDirectory": "frontend"` so Vercel builds the Vite app from `frontend/`.
+The repo includes [`vercel.json`](vercel.json) with a single **Services** entry (`experimentalServices.web`) pointing at `frontend/`, so Vercel deploys only the Vite app even though `backend/` exists in the same repo. Your API should still run elsewhere (Railway, Render, etc.).
 
-1. Push this repository to GitHub and import it in [Vercel](https://vercel.com) (framework: Vite is auto-detected).
+**If the project framework is not “Services”:** In Vercel → Project → Settings → General, set **Root Directory** to `frontend` and **Framework Preset** to **Vite**, then you can replace `vercel.json` with a minimal Vite config or delete it and rely on defaults.
+
+1. Push this repository to GitHub and import it in [Vercel](https://vercel.com). If Vercel enables **Services** for this monorepo, keep the provided `vercel.json`.
 2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`** to the public URL of your API, including the `/api` path, for example `https://your-backend.up.railway.app/api`. The Express API is not run by this Vercel project; host the backend on [Railway](https://railway.app), [Render](https://render.com), a VPS, etc., with `DATABASE_URL`, `JWT_SECRET`, and other vars from `backend/.env.example`.
 3. Redeploy after changing env vars so Vite picks them up at build time.
 
