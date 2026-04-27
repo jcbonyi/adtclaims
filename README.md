@@ -60,12 +60,15 @@ Frontend runs on Vite and proxies `/api` to `http://localhost:4000`.
 
 ## Deploy frontend on Vercel
 
-The repo includes [`vercel.json`](vercel.json) with a single **Services** entry (`experimentalServices.web`) pointing at `frontend/`, so Vercel deploys only the Vite app even though `backend/` exists in the same repo. Your API should still run elsewhere (Railway, Render, etc.).
+The repo includes [`vercel.json`](vercel.json) with **Services** entries `frontend` (Vite, `/`) and `backend` (Express, `/_/backend`), matching Vercel’s monorepo template.
 
-**If the project framework is not “Services”:** In Vercel → Project → Settings → General, set **Root Directory** to `frontend` and **Framework Preset** to **Vite**, then you can replace `vercel.json` with a minimal Vite config or delete it and rely on defaults.
+**If the project framework is not “Services”:** In Vercel → Project → Settings → General, set **Root Directory** to `frontend` and **Framework Preset** to **Vite**, then you can remove `experimentalServices` and host the API separately.
 
 1. Push this repository to GitHub and import it in [Vercel](https://vercel.com). If Vercel enables **Services** for this monorepo, keep the provided `vercel.json`.
-2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`** to the public URL of your API, including the `/api` path, for example `https://your-backend.up.railway.app/api`. The Express API is not run by this Vercel project; host the backend on [Railway](https://railway.app), [Render](https://render.com), a VPS, etc., with `DATABASE_URL`, `JWT_SECRET`, and other vars from `backend/.env.example`.
+2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`**:
+   - **Combined deploy** (this repo’s `vercel.json` services): use your deployment origin plus the API prefix, e.g. `https://your-project.vercel.app/_/backend/api` (no trailing slash).
+   - **API hosted elsewhere** (Railway, Render, etc.): use that URL with `/api`, e.g. `https://your-backend.up.railway.app/api`.
+   Set `DATABASE_URL`, `JWT_SECRET`, and other vars from `backend/.env.example` on the Vercel project so the backend service can reach Postgres.
 3. Redeploy after changing env vars so Vite picks them up at build time.
 
 ## API Highlights
