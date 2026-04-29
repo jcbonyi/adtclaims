@@ -14,6 +14,8 @@ const defaultFilters = {
   fromDate: "",
   toDate: "",
   search: "",
+  garage: "",
+  lifecycle: "",
 };
 
 export default function ClaimsRegisterPage() {
@@ -174,7 +176,7 @@ export default function ClaimsRegisterPage() {
         <form onSubmit={onSearchSubmit} className="grid gap-2 md:grid-cols-4">
           <input
             className="rounded-md border border-slate-300 px-2 py-2 text-sm"
-            placeholder="Search name / reg / insurer / remarks"
+            placeholder="Search name / reg / insurer / garage / remarks"
             value={filters.search}
             onChange={(e) => updateFilter("search", e.target.value)}
           />
@@ -184,6 +186,21 @@ export default function ClaimsRegisterPage() {
             value={filters.insurer}
             onChange={(e) => updateFilter("insurer", e.target.value)}
           />
+          <input
+            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            placeholder="Garage / repairer"
+            value={filters.garage}
+            onChange={(e) => updateFilter("garage", e.target.value)}
+          />
+          <select
+            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            value={filters.lifecycle}
+            onChange={(e) => updateFilter("lifecycle", e.target.value)}
+          >
+            <option value="">All claims (open + closed)</option>
+            <option value="open">Open claims only</option>
+            <option value="closed">Closed claims only</option>
+          </select>
           <select
             className="rounded-md border border-slate-300 px-2 py-2 text-sm"
             value={filters.claimType}

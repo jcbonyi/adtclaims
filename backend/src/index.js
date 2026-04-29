@@ -1272,6 +1272,7 @@ app.get("/api/claims", authRequired, async (req, res) => {
     toDate,
     search,
     lifecycle,
+    garage,
     sortBy = "reported_to_broker_date",
     sortOrder = "desc",
   } = req.query;
@@ -1298,6 +1299,8 @@ app.get("/api/claims", authRequired, async (req, res) => {
   if (claimType) addFilter("claim_type = $X", claimType);
   if (coverType) addFilter("cover_type = $X", coverType);
   if (status) addFilter("claim_status = $X", status);
+  const garageTrim = String(garage || "").trim();
+  if (garageTrim) addFilter("garage ILIKE $X", `%${garageTrim}%`);
   if (fromDate) addFilter("reported_to_broker_date >= $X", fromDate);
   if (toDate) addFilter("reported_to_broker_date <= $X", toDate);
 
@@ -1347,6 +1350,7 @@ app.get("/api/claims", authRequired, async (req, res) => {
         String(item.insuredName || "").toLowerCase().includes(searchNorm) ||
         String(item.registrationNumber || "").toLowerCase().includes(searchNorm) ||
         String(item.insurer || "").toLowerCase().includes(searchNorm) ||
+        String(item.garage || "").toLowerCase().includes(searchNorm) ||
         String(item.lastRemark || "").toLowerCase().includes(searchNorm)
       );
     });
@@ -1680,6 +1684,8 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
     fromDate,
     toDate,
     search,
+    lifecycle,
+    garage,
     sortBy = "reported_to_broker_date",
     sortOrder = "desc",
   } = req.query;
@@ -1705,8 +1711,23 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
   if (claimType) addFilter("claim_type = $X", claimType);
   if (coverType) addFilter("cover_type = $X", coverType);
   if (status) addFilter("claim_status = $X", status);
+  const garageTrimExport = String(garage || "").trim();
+  if (garageTrimExport) addFilter("garage ILIKE $X", `%${garageTrimExport}%`);
   if (fromDate) addFilter("reported_to_broker_date >= $X", fromDate);
   if (toDate) addFilter("reported_to_broker_date <= $X", toDate);
+
+  const lifecycleExport = String(lifecycle || "").toLowerCase();
+  if (lifecycleExport === "open") {
+    const start = params.length + 1;
+    params.push(...CLOSED_STATUS_LIST);
+    const ph = buildInClausePlaceholders(CLOSED_STATUS_LIST, start);
+    where.push(`claim_status NOT IN (${ph})`);
+  } else if (lifecycleExport === "closed") {
+    const start = params.length + 1;
+    params.push(...CLOSED_STATUS_LIST);
+    const ph = buildInClausePlaceholders(CLOSED_STATUS_LIST, start);
+    where.push(`claim_status IN (${ph})`);
+  }
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const result = await pool.query(
@@ -1734,6 +1755,7 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
       String(row.insured_name || "").toLowerCase().includes(searchNorm) ||
       String(row.registration_number || "").toLowerCase().includes(searchNorm) ||
       String(row.insurer || "").toLowerCase().includes(searchNorm) ||
+      String(row.garage || "").toLowerCase().includes(searchNorm) ||
       String(latestRemarks.get(row.id) || "").toLowerCase().includes(searchNorm)
     );
   });
