@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -12,16 +13,31 @@ import {
   YAxis,
 } from "recharts";
 import client from "../api/client";
+import { formatDate } from "../utils/format";
 
 const chartColors = ["#1d4ed8", "#0f766e", "#d97706", "#7c3aed", "#db2777", "#334155", "#16a34a"];
 
-function KpiCard({ label, value }) {
-  return (
-    <div className="rounded-xl bg-white p-4 shadow-sm">
+function KpiCard({ label, value, onClick, isActive }) {
+  const body = (
+    <>
       <p className="text-sm text-slate-500">{label}</p>
       <p className="text-2xl font-semibold text-slate-900">{value ?? 0}</p>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-full rounded-xl bg-white p-4 text-left shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
+          isActive ? "ring-2 ring-blue-600" : ""
+        }`}
+      >
+        {body}
+      </button>
+    );
+  }
+  return <div className="rounded-xl bg-white p-4 shadow-sm">{body}</div>;
 }
 
 function FollowUpPanel({ title, rows, onRemark }) {
@@ -79,6 +95,13 @@ export default function DashboardPage() {
   const [insurers, setInsurers] = useState([]);
   const [selectedInsurer, setSelectedInsurer] = useState("");
   const [insurerData, setInsurerData] = useState(null);
+  const [lifecycleFilter, setLifecycleFilter] = useState(null);
+  const [kpiClaims, setKpiClaims] = useState([]);
+  const [kpiTotal, setKpiTotal] = useState(0);
+  const [kpiPage, setKpiPage] = useState(1);
+  const [kpiLoading, setKpiLoading] = useState(false);
+
+  const kpiTotalPages = useMemo(() => Math.max(1, Math.ceil(kpiTotal / 20)), [kpiTotal]);
 
   async function loadOverall() {
     const [overallRes, operationsRes, metaRes] = await Promise.all([
@@ -141,6 +164,34 @@ export default function DashboardPage() {
     await client.post(`/claims/${claimId}/remarks`, { remark: remark.trim() });
     await loadOverall();
     await loadInsurer(selectedInsurer);
+    if (lifecycleFilter) await loadKpiClaimsTable(lifecycleFilter, kpiPage);
+  }
+
+  async function loadKpiClaimsTable(lifecycle, pageNum = 1) {
+    setKpiLoading(true);
+    try {
+      const res = await client.get("/claims", {
+        params: { page: pageNum, limit: 20, lifecycle },
+      });
+      setKpiClaims(res.data.claims);
+      setKpiTotal(res.data.total);
+      setKpiPage(pageNum);
+    } finally {
+      setKpiLoading(false);
+    }
+  }
+
+  function toggleLifecycleFilter(next) {
+    if (lifecycleFilter === next) {
+      setLifecycleFilter(null);
+      setKpiClaims([]);
+      setKpiTotal(0);
+      setKpiPage(1);
+      return;
+    }
+    setLifecycleFilter(next);
+    setKpiPage(1);
+    loadKpiClaimsTable(next, 1);
   }
 
   const agingRows = useMemo(() => overall?.agingBreakdown || [], [overall]);
@@ -152,11 +203,106 @@ export default function DashboardPage() {
   return (
     <section className="space-y-4">
       <div className="grid gap-4 md:grid-cols-4">
-        <KpiCard label="Total Open Claims" value={overall.kpis.total_open} />
-        <KpiCard label="Total Closed Claims" value={overall.kpis.total_closed} />
+        <KpiCard
+          label="Total Open Claims"
+          value={overall.kpis.total_open}
+          onClick={() => toggleLifecycleFilter("open")}
+          isActive={lifecycleFilter === "open"}
+        />
+        <KpiCard
+          label="Total Closed Claims"
+          value={overall.kpis.total_closed}
+          onClick={() => toggleLifecycleFilter("closed")}
+          isActive={lifecycleFilter === "closed"}
+        />
         <KpiCard label="Avg Days Open" value={overall.kpis.avg_days_open} />
         <KpiCard label="Claims Over 30 Days" value={overall.kpis.over_30} />
       </div>
+
+      {lifecycleFilter ? (
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-base font-semibold text-slate-900">
+              {lifecycleFilter === "open" ? "Open claims" : "Closed claims"}
+              <span className="ml-2 text-sm font-normal text-slate-500">({kpiTotal} total)</span>
+            </h3>
+            <Link to="/claims" className="text-sm text-blue-700 hover:underline">
+              Full register
+            </Link>
+          </div>
+          <div className="max-h-[28rem] overflow-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-2 py-2">ID</th>
+                  <th className="px-2 py-2">Insurer</th>
+                  <th className="px-2 py-2">Insured</th>
+                  <th className="px-2 py-2">Reg</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Reported (ADT)</th>
+                  <th className="px-2 py-2">Days open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kpiLoading ? (
+                  <tr>
+                    <td className="px-2 py-4 text-slate-500" colSpan={7}>
+                      Loading…
+                    </td>
+                  </tr>
+                ) : kpiClaims.length === 0 ? (
+                  <tr>
+                    <td className="px-2 py-4 text-slate-500" colSpan={7}>
+                      No claims in this list.
+                    </td>
+                  </tr>
+                ) : (
+                  kpiClaims.map((claim) => (
+                    <tr key={claim.id} className="border-t border-slate-100">
+                      <td className="px-2 py-2">
+                        <Link className="text-blue-700 hover:underline" to={`/claims/${claim.id}`}>
+                          {claim.id}
+                        </Link>
+                      </td>
+                      <td className="px-2 py-2">{claim.insurer}</td>
+                      <td className="px-2 py-2">{claim.insuredName}</td>
+                      <td className="px-2 py-2">{claim.registrationNumber}</td>
+                      <td className="px-2 py-2">{claim.claimStatus}</td>
+                      <td className="px-2 py-2">{formatDate(claim.reportedToBrokerDate)}</td>
+                      <td className="px-2 py-2">{claim.daysOpen ?? "-"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          {kpiTotal > 20 ? (
+            <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+              <span>
+                Page {kpiPage} of {kpiTotalPages}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={kpiPage <= 1 || kpiLoading}
+                  className="rounded border border-slate-300 px-3 py-1 disabled:opacity-50"
+                  onClick={() => loadKpiClaimsTable(lifecycleFilter, kpiPage - 1)}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={kpiPage >= kpiTotalPages || kpiLoading}
+                  className="rounded border border-slate-300 px-3 py-1 disabled:opacity-50"
+                  onClick={() => loadKpiClaimsTable(lifecycleFilter, kpiPage + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-xl bg-white p-4 shadow-sm">
@@ -236,11 +382,15 @@ export default function DashboardPage() {
             value={selectedInsurer}
             onChange={(e) => setSelectedInsurer(e.target.value)}
           >
-            {insurers.map((insurer) => (
-              <option value={insurer} key={insurer}>
-                {insurer}
-              </option>
-            ))}
+            {insurers.length === 0 ? (
+              <option value="">No insurers in claims yet</option>
+            ) : (
+              insurers.map((insurer) => (
+                <option value={insurer} key={insurer}>
+                  {insurer}
+                </option>
+              ))
+            )}
           </select>
         </div>
         {insurerData ? (

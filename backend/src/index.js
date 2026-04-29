@@ -27,9 +27,18 @@ const SNAPSHOT_FILE_PATH =
 function createDbPool(options = {}) {
   const { forceInMemory = false } = options;
   if (!forceInMemory && process.env.DATABASE_URL) {
+    const conn = process.env.DATABASE_URL;
+    const isSupabase =
+      typeof conn === "string" && (conn.includes("supabase.co") || conn.includes("pooler.supabase.com"));
     return {
       pool: new Pool({
-        connectionString: process.env.DATABASE_URL,
+        connectionString: conn,
+        max: 10,
+        ...(isSupabase
+          ? {
+              ssl: { rejectUnauthorized: false },
+            }
+          : {}),
       }),
       dbMode: "postgres",
     };
@@ -65,7 +74,8 @@ const CLAIM_STATUSES = [
   "Other",
 ];
 
-const CLOSED_STATUSES = new Set(["Closed", "Repudiated", "Declined", "Paid"]);
+const CLOSED_STATUS_LIST = ["Closed", "Repudiated", "Declined", "Paid"];
+const CLOSED_STATUSES = new Set(CLOSED_STATUS_LIST);
 const ROLES = ["Admin", "Claims Officer", "Read-Only"];
 
 const claimInputSchema = z.object({
@@ -1234,12 +1244,18 @@ app.get("/api/users/audit", authRequired, requireRole(["Admin"]), async (req, re
   );
 });
 
-app.get("/api/meta", authRequired, (_, res) => {
+app.get("/api/meta", authRequired, async (_, res) => {
+  const insurersRes = await pool.query(
+    `SELECT DISTINCT insurer FROM claims
+     WHERE insurer IS NOT NULL AND TRIM(insurer) <> ''
+     ORDER BY insurer ASC`
+  );
+  const insurers = insurersRes.rows.map((r) => r.insurer);
   res.json({
     statuses: CLAIM_STATUSES,
-    closedStatuses: Array.from(CLOSED_STATUSES),
+    closedStatuses: [...CLOSED_STATUS_LIST],
     roles: ROLES,
-    insurers: ["GA Insurance", "STAR", "SANLAM", "NCBA", "Jubilee", "INTRA", "NON-MOTOR"],
+    insurers,
   });
 });
 
@@ -1255,6 +1271,7 @@ app.get("/api/claims", authRequired, async (req, res) => {
     fromDate,
     toDate,
     search,
+    lifecycle,
     sortBy = "reported_to_broker_date",
     sortOrder = "desc",
   } = req.query;
@@ -1283,6 +1300,19 @@ app.get("/api/claims", authRequired, async (req, res) => {
   if (status) addFilter("claim_status = $X", status);
   if (fromDate) addFilter("reported_to_broker_date >= $X", fromDate);
   if (toDate) addFilter("reported_to_broker_date <= $X", toDate);
+
+  const lifecycleNorm = String(lifecycle || "").toLowerCase();
+  if (lifecycleNorm === "open") {
+    const start = params.length + 1;
+    params.push(...CLOSED_STATUS_LIST);
+    const ph = buildInClausePlaceholders(CLOSED_STATUS_LIST, start);
+    where.push(`claim_status NOT IN (${ph})`);
+  } else if (lifecycleNorm === "closed") {
+    const start = params.length + 1;
+    params.push(...CLOSED_STATUS_LIST);
+    const ph = buildInClausePlaceholders(CLOSED_STATUS_LIST, start);
+    where.push(`claim_status IN (${ph})`);
+  }
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 

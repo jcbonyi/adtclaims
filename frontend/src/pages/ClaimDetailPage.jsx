@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { CLAIM_STATUSES } from "../utils/constants";
-import { formatCurrency, formatDate } from "../utils/format";
+import { formatCurrency, formatDate, toDateInputString } from "../utils/format";
 
 const blankClaim = {
   insurer: "",
@@ -24,6 +24,27 @@ const blankClaim = {
   garage: "",
 };
 
+function claimStateFromApi(c) {
+  return {
+    insurer: c.insurer || "",
+    claimType: c.claimType || "MOTOR",
+    coverType: c.coverType || "",
+    insuredName: c.insuredName || "",
+    registrationNumber: c.registrationNumber || "",
+    accidentDate: toDateInputString(c.accidentDate),
+    reportedToBrokerDate: toDateInputString(c.reportedToBrokerDate),
+    reportedToInsurerDate: toDateInputString(c.reportedToInsurerDate),
+    assessedDate: toDateInputString(c.assessedDate),
+    claimStatus: c.claimStatus || "Reported",
+    claimStatusOther: c.claimStatusOther || "",
+    dateRaIssued: toDateInputString(c.dateRaIssued),
+    dateVehicleReleased: toDateInputString(c.dateVehicleReleased),
+    vehicleValue: c.vehicleValue ?? "",
+    repairEstimate: c.repairEstimate ?? "",
+    garage: c.garage || "",
+  };
+}
+
 export default function ClaimDetailPage({ mode }) {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -43,24 +64,7 @@ export default function ClaimDetailPage({ mode }) {
   async function loadClaim() {
     if (mode !== "edit") return;
     const res = await client.get(`/claims/${id}`);
-    setClaim({
-      insurer: res.data.claim.insurer || "",
-      claimType: res.data.claim.claimType || "MOTOR",
-      coverType: res.data.claim.coverType || "",
-      insuredName: res.data.claim.insuredName || "",
-      registrationNumber: res.data.claim.registrationNumber || "",
-      accidentDate: res.data.claim.accidentDate || "",
-      reportedToBrokerDate: res.data.claim.reportedToBrokerDate || "",
-      reportedToInsurerDate: res.data.claim.reportedToInsurerDate || "",
-      assessedDate: res.data.claim.assessedDate || "",
-      claimStatus: res.data.claim.claimStatus || "Reported",
-      claimStatusOther: res.data.claim.claimStatusOther || "",
-      dateRaIssued: res.data.claim.dateRaIssued || "",
-      dateVehicleReleased: res.data.claim.dateVehicleReleased || "",
-      vehicleValue: res.data.claim.vehicleValue ?? "",
-      repairEstimate: res.data.claim.repairEstimate ?? "",
-      garage: res.data.claim.garage || "",
-    });
+    setClaim(claimStateFromApi(res.data.claim));
     setRemarks(res.data.remarks);
     setHistory(res.data.statusHistory);
   }
@@ -71,24 +75,7 @@ export default function ClaimDetailPage({ mode }) {
     async function init() {
       const res = await client.get(`/claims/${id}`);
       if (ignore) return;
-      setClaim({
-        insurer: res.data.claim.insurer || "",
-        claimType: res.data.claim.claimType || "MOTOR",
-        coverType: res.data.claim.coverType || "",
-        insuredName: res.data.claim.insuredName || "",
-        registrationNumber: res.data.claim.registrationNumber || "",
-        accidentDate: res.data.claim.accidentDate || "",
-        reportedToBrokerDate: res.data.claim.reportedToBrokerDate || "",
-        reportedToInsurerDate: res.data.claim.reportedToInsurerDate || "",
-        assessedDate: res.data.claim.assessedDate || "",
-        claimStatus: res.data.claim.claimStatus || "Reported",
-        claimStatusOther: res.data.claim.claimStatusOther || "",
-        dateRaIssued: res.data.claim.dateRaIssued || "",
-        dateVehicleReleased: res.data.claim.dateVehicleReleased || "",
-        vehicleValue: res.data.claim.vehicleValue ?? "",
-        repairEstimate: res.data.claim.repairEstimate ?? "",
-        garage: res.data.claim.garage || "",
-      });
+      setClaim(claimStateFromApi(res.data.claim));
       setRemarks(res.data.remarks);
       setHistory(res.data.statusHistory);
     }

@@ -4,6 +4,18 @@ import client from "../api/client";
 
 const AuthContext = createContext(null);
 
+/** Prefer server JSON message; surface network/config issues (common on Vercel). */
+function apiErrorMessage(error, fallback) {
+  const msg = error.response?.data?.message;
+  if (typeof msg === "string" && msg.trim()) return msg;
+  const status = error.response?.status;
+  if (!error.response && error.message) {
+    return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL in Vercel matches your API (e.g. …/api).`;
+  }
+  if (status) return `${fallback} (HTTP ${status}).`;
+  return fallback;
+}
+
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("claims_token") || "");
   const [user, setUser] = useState(() => {
@@ -49,7 +61,7 @@ export function AuthProvider({ children }) {
       saveAuth(res.data.token, res.data.user);
       return { ok: true };
     } catch (error) {
-      return { ok: false, message: error.response?.data?.message || "Login failed" };
+      return { ok: false, message: apiErrorMessage(error, "Login failed") };
     } finally {
       setLoading(false);
     }
@@ -62,7 +74,7 @@ export function AuthProvider({ children }) {
       saveAuth(res.data.token, res.data.user);
       return { ok: true };
     } catch (error) {
-      return { ok: false, message: error.response?.data?.message || "Failed to create admin" };
+      return { ok: false, message: apiErrorMessage(error, "Failed to create admin") };
     } finally {
       setLoading(false);
     }
@@ -76,7 +88,7 @@ export function AuthProvider({ children }) {
     } catch (error) {
       return {
         ok: false,
-        message: error.response?.data?.message || "Failed to reset admin password",
+        message: apiErrorMessage(error, "Failed to reset admin password"),
       };
     } finally {
       setLoading(false);
@@ -94,7 +106,7 @@ export function AuthProvider({ children }) {
     } catch (error) {
       return {
         ok: false,
-        message: error.response?.data?.message || "Failed to change password",
+        message: apiErrorMessage(error, "Failed to change password"),
       };
     } finally {
       setLoading(false);
