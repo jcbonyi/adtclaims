@@ -19,7 +19,7 @@ Full-stack web application for managing insurance claims across insurers and cla
   - Stuck >7 Days
   - Pending Documents
   - Not Released
-- CSV export endpoint and UI trigger
+- Excel export endpoint and UI trigger (management-ready formatting, ADT colours)
 - Excel import endpoint with warning flags for invalid/incomplete rows
 
 ## Business Rule Coverage
@@ -177,7 +177,7 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 - `GET /api/dashboard/insurer?insurer=...`
 - `GET /api/dashboard/operations`
 - `POST /api/claims/import-excel` import register from Excel
-- `GET /api/claims-export.csv` export all claims as CSV
+- `GET /api/claims-export.xlsx` export claims as a styled Excel workbook (ADT branding; same filters as the register)
 
 ## Suggested Next Steps (Phase 2)
 

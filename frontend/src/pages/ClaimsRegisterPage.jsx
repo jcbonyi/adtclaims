@@ -97,18 +97,20 @@ export default function ClaimsRegisterPage() {
     }
   }
 
-  async function handleExportCsv() {
+  async function handleExportExcel() {
     setExporting(true);
     try {
-      const res = await client.get("/claims-export.csv", {
+      const res = await client.get("/claims-export.xlsx", {
         responseType: "blob",
         params: appliedFilters,
       });
-      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const blob = new Blob([res.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "claims-export.csv";
+      link.download = "ADT-claims-register.xlsx";
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -148,11 +150,11 @@ export default function ClaimsRegisterPage() {
             ) : null}
             <button
               type="button"
-              onClick={handleExportCsv}
+              onClick={handleExportExcel}
               disabled={exporting}
-              className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              className="rounded-md bg-[#0078C8] px-3 py-2 text-sm font-medium text-white hover:bg-[#006BA3] disabled:opacity-60"
             >
-              {exporting ? "Exporting..." : "Export CSV"}
+              {exporting ? "Exporting..." : "Export Excel"}
             </button>
           </div>
         </div>

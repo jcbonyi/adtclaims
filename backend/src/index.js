@@ -11,6 +11,7 @@ const { newDb } = require("pg-mem");
 const { z } = require("zod");
 const multer = require("multer");
 const xlsx = require("xlsx");
+const { buildClaimsManagementWorkbookBuffer } = require("./claimsExportExcel");
 require("dotenv").config();
 
 const app = express();
@@ -155,6 +156,24 @@ function formatDateForCsv(value) {
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const yy = date.getFullYear();
   return `${dd}/${mm}/${yy}`;
+}
+
+function buildExportFilterSummary(q) {
+  const raw = q || {};
+  const parts = [];
+  if (raw.insurer) parts.push(`Insurer: ${raw.insurer}`);
+  if (raw.claimType) parts.push(`Claim type: ${raw.claimType}`);
+  if (raw.coverType) parts.push(`Cover: ${raw.coverType}`);
+  if (raw.status) parts.push(`Status: ${raw.status}`);
+  if (raw.agingBucket) parts.push(`Aging bucket: ${raw.agingBucket}`);
+  if (raw.fromDate) parts.push(`Reported to ADT from: ${raw.fromDate}`);
+  if (raw.toDate) parts.push(`Reported to ADT to: ${raw.toDate}`);
+  if (raw.search && String(raw.search).trim()) parts.push(`Search: "${String(raw.search).trim()}"`);
+  if (raw.lifecycle) parts.push(`Lifecycle: ${String(raw.lifecycle)}`);
+  if (raw.garage && String(raw.garage).trim()) parts.push(`Garage: contains "${String(raw.garage).trim()}"`);
+  return parts.length
+    ? `Filters applied — ${parts.join(" · ")}`
+    : "No register filters applied — export includes all claims.";
 }
 
 function normalizeSecret(value) {
@@ -1689,7 +1708,7 @@ app.post(
   }
 );
 
-app.get("/api/claims-export.csv", authRequired, async (req, res) => {
+async function fetchFilteredClaimsForExport(query) {
   const {
     insurer,
     claimType,
@@ -1703,7 +1722,7 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
     garage,
     sortBy = "reported_to_broker_date",
     sortOrder = "desc",
-  } = req.query;
+  } = query || {};
 
   const allowedSortFields = new Set([
     "reported_to_broker_date",
@@ -1761,7 +1780,7 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
 
   const latestRemarks = await fetchLatestRemarksByClaimIds(result.rows.map((row) => row.id));
   const searchNorm = String(search || "").trim().toLowerCase();
-  const rows = result.rows.filter((row) => {
+  return result.rows.filter((row) => {
     const daysOpen = computeDaysOpen(row.reported_to_broker_date, row.closure_date);
     const bucket = calcAgingBucket(daysOpen);
     if (agingBucket && bucket !== agingBucket) return false;
@@ -1774,32 +1793,33 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
       String(latestRemarks.get(row.id) || "").toLowerCase().includes(searchNorm)
     );
   });
+}
 
-  const header = [
-    "ID",
-    "Insurer",
-    "Claim Type",
-    "Cover Type",
-    "Insured Name",
-    "Reg No",
-    "Accident Date",
-    "Reported to ADT",
-    "Reported to Insurer",
-    "Assessed Date",
-    "Status",
-    "Status Other",
-    "RA Date",
-    "Released Date",
-    "Vehicle Value",
-    "Repair Estimate",
-    "Garage",
-    "Closure Date",
-    "Days Open",
-  ];
-
-  const lines = [header.join(",")];
-  for (const row of rows) {
-    const values = [
+app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
+  try {
+    const rows = await fetchFilteredClaimsForExport(req.query);
+    const headers = [
+      "ID",
+      "Insurer",
+      "Claim Type",
+      "Cover Type",
+      "Insured Name",
+      "Reg No",
+      "Accident Date",
+      "Reported to ADT",
+      "Reported to Insurer",
+      "Assessed Date",
+      "Status",
+      "Status Other",
+      "RA Date",
+      "Released Date",
+      "Vehicle Value (KES)",
+      "Repair Estimate (KES)",
+      "Garage",
+      "Closure Date",
+      "Days Open",
+    ];
+    const dataRows = rows.map((row) => [
       row.id,
       row.insurer,
       row.claim_type,
@@ -1819,13 +1839,20 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
       row.garage,
       formatDateForCsv(row.closure_date),
       computeDaysOpen(row.reported_to_broker_date, row.closure_date),
-    ].map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`);
-    lines.push(values.join(","));
+    ]);
+    const buffer = await buildClaimsManagementWorkbookBuffer({
+      headers,
+      dataRows,
+      filterSummary: buildExportFilterSummary(req.query),
+      dataRowCount: rows.length,
+    });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="ADT-claims-register.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Export failed" });
   }
-
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", "attachment; filename=claims-export.csv");
-  res.send(lines.join("\n"));
 });
 
 app.get("/api/dashboard/overall", authRequired, async (_, res) => {
