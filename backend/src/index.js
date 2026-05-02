@@ -142,6 +142,21 @@ function computeDaysOpen(reportedToBrokerDate, closureDate) {
   return days < 0 ? 0 : days;
 }
 
+/** CSV export: DD/MM/YYYY (avoid JS Date toString / raw ISO in cells). */
+function formatDateForCsv(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "string") {
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yy = date.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
 function normalizeSecret(value) {
   return String(value || "")
     .trim()
@@ -1791,18 +1806,18 @@ app.get("/api/claims-export.csv", authRequired, async (req, res) => {
       row.cover_type,
       row.insured_name,
       row.registration_number,
-      row.accident_date,
-      row.reported_to_broker_date,
-      row.reported_to_insurer_date,
-      row.assessed_date,
+      formatDateForCsv(row.accident_date),
+      formatDateForCsv(row.reported_to_broker_date),
+      formatDateForCsv(row.reported_to_insurer_date),
+      formatDateForCsv(row.assessed_date),
       row.claim_status,
       row.claim_status_other,
-      row.date_ra_issued,
-      row.date_vehicle_released,
+      formatDateForCsv(row.date_ra_issued),
+      formatDateForCsv(row.date_vehicle_released),
       row.vehicle_value,
       row.repair_estimate,
       row.garage,
-      row.closure_date,
+      formatDateForCsv(row.closure_date),
       computeDaysOpen(row.reported_to_broker_date, row.closure_date),
     ].map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`);
     lines.push(values.join(","));

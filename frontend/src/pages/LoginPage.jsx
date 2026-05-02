@@ -66,6 +66,13 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
       <form onSubmit={onSubmit} className="w-full max-w-md rounded-xl bg-white p-6 shadow-sm">
+        <div className="mb-6 flex justify-center">
+          <img
+            src="/adt-logo.png"
+            alt="ADT Insurance"
+            className="h-12 w-auto max-w-full object-contain sm:h-14"
+          />
+        </div>
         <h1 className="mb-1 text-xl font-semibold text-slate-900">Insurance Claims Tracker</h1>
         <p className="mb-6 text-sm text-slate-600">
           {mode === "login"

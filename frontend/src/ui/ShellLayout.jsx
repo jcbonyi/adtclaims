@@ -18,8 +18,16 @@ export default function ShellLayout() {
     <div className="min-h-screen bg-slate-100">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link to="/dashboard" className="text-lg font-semibold text-slate-900">
-            ADT Claims Tracker
+          <Link
+            to="/dashboard"
+            className="flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded"
+            aria-label="ADT Claims Tracker — go to dashboard"
+          >
+            <img
+              src="/adt-logo.png"
+              alt=""
+              className="h-9 w-auto max-h-10 max-w-[min(100%,14rem)] object-contain object-left sm:h-10"
+            />
           </Link>
           <div className="flex items-center gap-4">
             <div className="text-right text-sm text-slate-600">
