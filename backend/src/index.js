@@ -64,6 +64,7 @@ const CLAIM_STATUSES = [
   "Pending Documents",
   "Pending Supplementary",
   "Under Repair",
+  "Awaiting Re-Inspection",
   "Pending RA",
   "RA Issued",
   "Pending LPO",
