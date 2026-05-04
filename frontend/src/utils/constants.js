@@ -1,5 +1,6 @@
 export const CLAIM_STATUSES = [
   "Reported",
+  "Under Investigation",
   "Awaiting Assessment",
   "Pending Documents",
   "Under Repair",
