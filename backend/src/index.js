@@ -1612,6 +1612,31 @@ app.put(
   async (req, res) => createOrUpdateClaim(req, res, "update")
 );
 
+app.delete(
+  "/api/claims/:id",
+  authRequired,
+  requireRole(["Admin", "Claims Officer"]),
+  async (req, res) => {
+    try {
+      const claimId = Number(req.params.id);
+      if (!Number.isFinite(claimId)) {
+        return res.status(400).json({ message: "Invalid claim id" });
+      }
+
+      const existing = await pool.query("SELECT id FROM claims WHERE id = $1", [claimId]);
+      if (!existing.rows[0]) {
+        return res.status(404).json({ message: "Claim not found" });
+      }
+
+      await pool.query("DELETE FROM claims WHERE id = $1", [claimId]);
+      await maybePersistInMemorySnapshot();
+      return res.json({ ok: true });
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+  }
+);
+
 app.patch(
   "/api/claims/:id/status",
   authRequired,

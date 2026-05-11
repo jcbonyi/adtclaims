@@ -29,6 +29,7 @@ export default function ClaimsRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [deletingClaimId, setDeletingClaimId] = useState(null);
   const [importResult, setImportResult] = useState(null);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / 20)), [total]);
@@ -78,6 +79,23 @@ export default function ClaimsRegisterPage() {
     if (!remark?.trim()) return;
     await client.post(`/claims/${claimId}/remarks`, { remark: remark.trim() });
     await loadClaims(page);
+  }
+
+  async function deleteClaim(claimId) {
+    if (!canEdit) return;
+    const confirmed = window.confirm(
+      "Delete this claim entry? This action cannot be undone and all related remarks/history will be removed."
+    );
+    if (!confirmed) return;
+
+    setDeletingClaimId(claimId);
+    try {
+      await client.delete(`/claims/${claimId}`);
+      const nextPage = rows.length === 1 && page > 1 ? page - 1 : page;
+      await loadClaims(nextPage);
+    } finally {
+      setDeletingClaimId(null);
+    }
   }
 
   async function handleImportFile(file) {
@@ -327,6 +345,16 @@ export default function ClaimsRegisterPage() {
                         type="button"
                       >
                         Remark
+                      </button>
+                    ) : null}
+                    {canEdit ? (
+                      <button
+                        className="rounded border border-red-300 px-2 py-1 text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => deleteClaim(claim.id)}
+                        type="button"
+                        disabled={deletingClaimId === claim.id}
+                      >
+                        {deletingClaimId === claim.id ? "Deleting..." : "Delete"}
                       </button>
                     ) : null}
                   </div>
