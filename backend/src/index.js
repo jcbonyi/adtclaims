@@ -12,6 +12,11 @@ const { z } = require("zod");
 const multer = require("multer");
 const xlsx = require("xlsx");
 const { buildClaimsManagementWorkbookBuffer } = require("./claimsExportExcel");
+const {
+  CLAIM_STATUS_GROUPS,
+  CLAIM_STATUSES,
+  CLOSED_STATUS_LIST,
+} = require("./claimStatuses");
 require("dotenv").config();
 
 const app = express();
@@ -57,31 +62,6 @@ let { pool, dbMode } = createDbPool();
 let snapshotWriteInProgress = false;
 let snapshotWriteQueued = false;
 
-const CLAIM_STATUSES = [
-  "Reported",
-  "Under Investigation",
-  "Awaiting Assessment",
-  "Pending Documents",
-  "Pending Supplementary",
-  "Under Repair",
-  "Awaiting Re-Inspection",
-  "Pending RA",
-  "RA Issued",
-  "Pending LPO",
-  "LPO Issued",
-  "Released",
-  "Closed",
-  "Repudiated",
-  "Declined",
-  "Paid",
-  "DV Disputed",
-  "Pending CIL Payments",
-  "Undocumented",
-  "Not Reported",
-  "Other",
-];
-
-const CLOSED_STATUS_LIST = ["Closed", "Repudiated", "Declined", "Paid"];
 const CLOSED_STATUSES = new Set(CLOSED_STATUS_LIST);
 const ROLES = ["Admin", "Claims Officer", "Read-Only"];
 
@@ -1285,18 +1265,26 @@ app.get("/api/users/audit", authRequired, requireRole(["Admin"]), async (req, re
 });
 
 app.get("/api/meta", authRequired, async (_, res) => {
-  const insurersRes = await pool.query(
-    `SELECT DISTINCT insurer FROM claims
-     WHERE insurer IS NOT NULL AND TRIM(insurer) <> ''
-     ORDER BY insurer ASC`
-  );
-  const insurers = insurersRes.rows.map((r) => r.insurer);
-  res.json({
-    statuses: CLAIM_STATUSES,
-    closedStatuses: [...CLOSED_STATUS_LIST],
-    roles: ROLES,
-    insurers,
-  });
+  try {
+    const insurersRes = await pool.query(
+      `SELECT DISTINCT insurer FROM claims
+       WHERE insurer IS NOT NULL AND insurer <> ''
+       ORDER BY insurer ASC`
+    );
+    const insurers = insurersRes.rows
+      .map((r) => r.insurer)
+      .filter((name) => String(name || "").trim() !== "");
+    return res.json({
+      statuses: CLAIM_STATUSES,
+      statusGroups: CLAIM_STATUS_GROUPS,
+      closedStatuses: [...CLOSED_STATUS_LIST],
+      roles: ROLES,
+      insurers,
+    });
+  } catch (error) {
+    console.error("GET /api/meta failed:", error.message);
+    return res.status(500).json({ message: error.message || "Failed to load meta" });
+  }
 });
 
 app.get("/api/claims", authRequired, async (req, res) => {

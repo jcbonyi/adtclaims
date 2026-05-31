@@ -249,7 +249,7 @@ export default function UserManagementPage() {
           <button
             type="submit"
             disabled={creating}
-            className="md:col-span-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            className="adt-btn adt-btn-accent md:col-span-4"
           >
             {creating ? "Creating..." : "Create User"}
           </button>
@@ -347,14 +347,14 @@ export default function UserManagementPage() {
                       <>
                         <button
                           type="button"
-                          className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700"
+                          className="adt-btn adt-btn-accent adt-btn-sm"
                           onClick={() => saveEdit(row.id)}
                         >
                           Save
                         </button>
                         <button
                           type="button"
-                          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                          className="adt-btn adt-btn-secondary adt-btn-sm"
                           onClick={cancelEdit}
                         >
                           Cancel
@@ -363,7 +363,7 @@ export default function UserManagementPage() {
                     ) : (
                       <button
                         type="button"
-                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                        className="adt-btn adt-btn-secondary adt-btn-sm"
                         onClick={() => startEdit(row)}
                       >
                         Edit
@@ -371,21 +371,21 @@ export default function UserManagementPage() {
                     )}
                     <button
                       type="button"
-                      className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700"
+                      className="adt-btn adt-btn-primary adt-btn-sm"
                       onClick={() => resetUserPassword(row.id)}
                     >
                       Reset Password
                     </button>
                     <button
                       type="button"
-                      className="rounded border border-orange-300 px-2 py-1 text-xs text-orange-700"
+                      className="adt-btn adt-btn-secondary adt-btn-sm"
                       onClick={() => toggleUserActive(row.id, row.isActive)}
                     >
                       {row.isActive ? "Deactivate" : "Reactivate"}
                     </button>
                     <button
                       type="button"
-                      className="rounded border border-red-300 px-2 py-1 text-xs text-red-700"
+                      className="adt-btn adt-btn-danger adt-btn-sm"
                       onClick={() => deleteUser(row.id, row.email)}
                     >
                       Delete

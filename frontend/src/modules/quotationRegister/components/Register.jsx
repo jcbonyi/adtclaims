@@ -212,8 +212,8 @@ export function Register({
         subtitle={`Showing ${sorted.length} of ${quotations.length} records.`}
         actions={(
           <>
-            <Button tone="primary" onClick={() => setAddOpen(true)}>+ Add new quotation</Button>
-            <Button onClick={handleExport} disabled={exporting}>
+            <Button tone="accent" onClick={() => setAddOpen(true)}>+ Add new quotation</Button>
+            <Button tone="primary" onClick={handleExport} disabled={exporting}>
               {exporting ? 'Exporting...' : 'Export Excel'}
             </Button>
             <Button onClick={() => importRef.current?.click()}>{importing ? 'Importing...' : 'Import CSV'}</Button>

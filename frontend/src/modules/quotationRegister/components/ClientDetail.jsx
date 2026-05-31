@@ -66,7 +66,7 @@ export function ClientDetail() {
         <h2 style={{ margin: 0, flex: 1, fontSize: 22, color: THEME.brandBlueDark, letterSpacing: '-0.02em' }}>
           {q.clientName}
         </h2>
-        <Button tone="navy" onClick={() => setFollowOpen(true)}>Log follow-up</Button>
+        <Button tone="accent" onClick={() => setFollowOpen(true)}>Log follow-up</Button>
         <Button tone="primary" onClick={() => setEditOpen(true)}>Edit</Button>
       </div>
 

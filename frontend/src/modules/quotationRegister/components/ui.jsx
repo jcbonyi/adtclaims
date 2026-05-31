@@ -41,6 +41,7 @@ export function KpiRow({ children }) {
   return <div className="adt-kpi-row">{children}</div>
 }
 
+/** @param {{ tone?: 'primary' | 'accent' | 'secondary' | 'danger' | 'ghost' | 'navy' }} props */
 export function Button({
   children,
   type = 'button',

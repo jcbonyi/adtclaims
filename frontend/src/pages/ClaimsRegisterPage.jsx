@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { AGING_BUCKETS, CLAIM_STATUSES } from "../utils/constants";
+import { useToast } from "../context/ToastContext";
+import EmptyState from "../components/EmptyState";
+import Modal from "../components/Modal";
+import PageHeader from "../components/PageHeader";
+import { AGING_BUCKETS } from "../utils/constants";
+import StatusSelectOptions from "../components/StatusSelectOptions";
 import { agingClass, formatDate } from "../utils/format";
 
 const defaultFilters = {
@@ -31,8 +36,16 @@ export default function ClaimsRegisterPage() {
   const [exporting, setExporting] = useState(false);
   const [deletingClaimId, setDeletingClaimId] = useState(null);
   const [importResult, setImportResult] = useState(null);
+  const [remarkTarget, setRemarkTarget] = useState(null);
+  const [remarkText, setRemarkText] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const { notify } = useToast();
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / 20)), [total]);
+  const hasActiveFilters = useMemo(
+    () => Object.values(appliedFilters).some((v) => String(v || "").trim() !== ""),
+    [appliedFilters]
+  );
 
   async function loadClaims(nextPage = page, nextFilters = appliedFilters) {
     setLoading(true);
@@ -73,26 +86,30 @@ export default function ClaimsRegisterPage() {
     await loadClaims(page);
   }
 
-  async function addRemark(claimId) {
-    if (!canEdit) return;
-    const remark = window.prompt("Add follow-up remark:");
-    if (!remark?.trim()) return;
-    await client.post(`/claims/${claimId}/remarks`, { remark: remark.trim() });
-    await loadClaims(page);
+  async function submitRemark() {
+    if (!canEdit || !remarkTarget || !remarkText.trim()) return;
+    try {
+      await client.post(`/claims/${remarkTarget}/remarks`, { remark: remarkText.trim() });
+      setRemarkTarget(null);
+      setRemarkText("");
+      notify("Remark added.", "success");
+      await loadClaims(page);
+    } catch {
+      notify("Could not add remark.", "error");
+    }
   }
 
-  async function deleteClaim(claimId) {
-    if (!canEdit) return;
-    const confirmed = window.confirm(
-      "Delete this claim entry? This action cannot be undone and all related remarks/history will be removed."
-    );
-    if (!confirmed) return;
-
-    setDeletingClaimId(claimId);
+  async function confirmDelete() {
+    if (!canEdit || !deleteTarget) return;
+    setDeletingClaimId(deleteTarget);
     try {
-      await client.delete(`/claims/${claimId}`);
+      await client.delete(`/claims/${deleteTarget}`);
+      setDeleteTarget(null);
+      notify("Claim deleted.", "success");
       const nextPage = rows.length === 1 && page > 1 ? page - 1 : page;
       await loadClaims(nextPage);
+    } catch {
+      notify("Could not delete claim.", "error");
     } finally {
       setDeletingClaimId(null);
     }
@@ -150,13 +167,14 @@ export default function ClaimsRegisterPage() {
 
   return (
     <section className="space-y-4">
-      <div className="rounded-xl bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Claims Register</h2>
-          <div className="flex flex-wrap gap-2">
+      <PageHeader
+        title="Claims Register"
+        subtitle={`${total} claim${total === 1 ? "" : "s"}${hasActiveFilters ? " · filters applied" : ""}`}
+        actions={
+          <>
             {canEdit ? (
-              <label className="cursor-pointer rounded-md border border-slate-300 px-3 py-2 text-sm">
-                {importing ? "Importing..." : "Import Excel"}
+              <label className="adt-btn adt-btn-secondary cursor-pointer">
+                {importing ? "Importing…" : "Import Excel"}
                 <input
                   type="file"
                   accept=".xls,.xlsx"
@@ -170,14 +188,22 @@ export default function ClaimsRegisterPage() {
               type="button"
               onClick={handleExportExcel}
               disabled={exporting}
-              className="rounded-md bg-[#0078C8] px-3 py-2 text-sm font-medium text-white hover:bg-[#006BA3] disabled:opacity-60"
+              className="adt-btn adt-btn-primary"
             >
-              {exporting ? "Exporting..." : "Export Excel"}
+              {exporting ? "Exporting…" : "Export Excel"}
             </button>
-          </div>
-        </div>
+            {canEdit ? (
+              <Link to="/claims/new" className="adt-btn adt-btn-accent">
+                + Add claim
+              </Link>
+            ) : null}
+          </>
+        }
+      />
+
+      <div className="adt-card p-4">
         {importResult ? (
-          <div className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <div className="adt-alert adt-alert-info mb-3">
             <p>
               Imported {importResult.inserted} rows. Flagged {importResult.warnings.length} rows for manual review.
             </p>
@@ -193,27 +219,29 @@ export default function ClaimsRegisterPage() {
           </div>
         ) : null}
 
+        <details className="adt-filter-panel" open>
+          <summary className="mb-3">Search & filters</summary>
         <form onSubmit={onSearchSubmit} className="grid gap-2 md:grid-cols-4">
           <input
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-input md:col-span-2"
             placeholder="Search name / reg / insurer / garage / remarks"
             value={filters.search}
             onChange={(e) => updateFilter("search", e.target.value)}
           />
           <input
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-input"
             placeholder="Insurer"
             value={filters.insurer}
             onChange={(e) => updateFilter("insurer", e.target.value)}
           />
           <input
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-input"
             placeholder="Garage / repairer"
             value={filters.garage}
             onChange={(e) => updateFilter("garage", e.target.value)}
           />
           <select
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-select"
             value={filters.lifecycle}
             onChange={(e) => updateFilter("lifecycle", e.target.value)}
           >
@@ -222,7 +250,7 @@ export default function ClaimsRegisterPage() {
             <option value="closed">Closed claims only</option>
           </select>
           <select
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-select"
             value={filters.claimType}
             onChange={(e) => updateFilter("claimType", e.target.value)}
           >
@@ -231,25 +259,20 @@ export default function ClaimsRegisterPage() {
             <option value="NON-MOTOR">NON-MOTOR</option>
           </select>
           <input
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-input"
             placeholder="Cover Type"
             value={filters.coverType}
             onChange={(e) => updateFilter("coverType", e.target.value)}
           />
           <select
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-select"
             value={filters.status}
             onChange={(e) => updateFilter("status", e.target.value)}
           >
-            <option value="">Status</option>
-            {CLAIM_STATUSES.map((status) => (
-              <option value={status} key={status}>
-                {status}
-              </option>
-            ))}
+            <StatusSelectOptions placeholder="Status" />
           </select>
           <select
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-select"
             value={filters.agingBucket}
             onChange={(e) => updateFilter("agingBucket", e.target.value)}
           >
@@ -262,22 +285,22 @@ export default function ClaimsRegisterPage() {
           </select>
           <input
             type="date"
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-input"
             value={filters.fromDate}
             onChange={(e) => updateFilter("fromDate", e.target.value)}
           />
           <input
             type="date"
-            className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            className="adt-input"
             value={filters.toDate}
             onChange={(e) => updateFilter("toDate", e.target.value)}
           />
           <div className="md:col-span-4 flex gap-2">
-            <button className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white" type="submit">
-              Apply Filters
+            <button className="adt-btn adt-btn-primary" type="submit">
+              Apply filters
             </button>
             <button
-              className="rounded-md border border-slate-300 px-4 py-2 text-sm"
+              className="adt-btn adt-btn-secondary"
               type="button"
               onClick={async () => {
                 setFilters(defaultFilters);
@@ -289,11 +312,12 @@ export default function ClaimsRegisterPage() {
             </button>
           </div>
         </form>
+        </details>
       </div>
 
-      <div className="overflow-x-auto rounded-xl bg-white shadow-sm">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+      <div className="adt-table-wrap">
+        <table className="adt-table">
+          <thead>
             <tr>
               <th className="px-3 py-2">Insurer</th>
               <th className="px-3 py-2">Insured</th>
@@ -318,15 +342,11 @@ export default function ClaimsRegisterPage() {
                 <td className="px-3 py-2">
                   {canEdit ? (
                     <select
-                      className="rounded border border-slate-300 px-2 py-1"
+                      className="max-w-[14rem] rounded border border-slate-300 px-2 py-1 text-xs"
                       value={claim.claimStatus}
                       onChange={(e) => updateStatus(claim.id, e.target.value)}
                     >
-                      {CLAIM_STATUSES.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
+                      <StatusSelectOptions />
                     </select>
                   ) : (
                     claim.claimStatus
@@ -334,14 +354,17 @@ export default function ClaimsRegisterPage() {
                 </td>
                 <td className="px-3 py-2">{claim.lastRemark || "-"}</td>
                 <td className="px-3 py-2">
-                  <div className="flex gap-2">
-                    <Link className="rounded border border-slate-300 px-2 py-1" to={`/claims/${claim.id}`}>
+                  <div className="flex flex-wrap gap-1">
+                    <Link className="adt-btn adt-btn-secondary !px-2 !py-1 text-xs" to={`/claims/${claim.id}`}>
                       View
                     </Link>
                     {canEdit ? (
                       <button
-                        className="rounded border border-blue-300 px-2 py-1 text-blue-700"
-                        onClick={() => addRemark(claim.id)}
+                        className="adt-btn adt-btn-ghost !px-2 !py-1 text-xs"
+                        onClick={() => {
+                          setRemarkTarget(claim.id);
+                          setRemarkText("");
+                        }}
                         type="button"
                       >
                         Remark
@@ -349,12 +372,12 @@ export default function ClaimsRegisterPage() {
                     ) : null}
                     {canEdit ? (
                       <button
-                        className="rounded border border-red-300 px-2 py-1 text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => deleteClaim(claim.id)}
+                        className="adt-btn adt-btn-danger !px-2 !py-1 text-xs"
+                        onClick={() => setDeleteTarget(claim.id)}
                         type="button"
                         disabled={deletingClaimId === claim.id}
                       >
-                        {deletingClaimId === claim.id ? "Deleting..." : "Delete"}
+                        {deletingClaimId === claim.id ? "…" : "Delete"}
                       </button>
                     ) : null}
                   </div>
@@ -363,31 +386,106 @@ export default function ClaimsRegisterPage() {
             ))}
           </tbody>
         </table>
-        {loading ? <p className="p-3 text-sm text-slate-500">Loading...</p> : null}
-        {!loading && rows.length === 0 ? <p className="p-3 text-sm text-slate-500">No claims found.</p> : null}
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="adt-skeleton h-10 w-full" />
+            ))}
+          </div>
+        ) : null}
+        {!loading && rows.length === 0 ? (
+          <EmptyState
+            title="No claims match your filters"
+            message="Try adjusting filters or add a new claim to get started."
+            action={
+              canEdit ? (
+                <Link to="/claims/new" className="adt-btn adt-btn-accent">
+                  Add claim
+                </Link>
+              ) : null
+            }
+          />
+        ) : null}
       </div>
 
-      <div className="flex items-center justify-between rounded-xl bg-white p-3 shadow-sm">
+      <div className="adt-card flex flex-wrap items-center justify-between gap-3 p-3">
         <p className="text-sm text-slate-600">
           Page {page} of {totalPages} ({total} claims)
         </p>
         <div className="flex gap-2">
           <button
-            className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+            className="adt-btn adt-btn-secondary"
             onClick={() => loadClaims(Math.max(1, page - 1))}
-            disabled={page <= 1}
+            disabled={page <= 1 || loading}
           >
             Previous
           </button>
           <button
-            className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+            className="adt-btn adt-btn-secondary"
             onClick={() => loadClaims(Math.min(totalPages, page + 1))}
-            disabled={page >= totalPages}
+            disabled={page >= totalPages || loading}
           >
             Next
           </button>
         </div>
       </div>
+
+      <Modal
+        open={remarkTarget != null}
+        onClose={() => setRemarkTarget(null)}
+        title="Add follow-up remark"
+        footer={
+          <>
+            <button type="button" className="adt-btn adt-btn-secondary" onClick={() => setRemarkTarget(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="adt-btn adt-btn-accent"
+              onClick={submitRemark}
+              disabled={!remarkText.trim()}
+            >
+              Save remark
+            </button>
+          </>
+        }
+      >
+        <label className="adt-label" htmlFor="remark-body">
+          Remark
+        </label>
+        <textarea
+          id="remark-body"
+          className="adt-input min-h-[100px] resize-y"
+          value={remarkText}
+          onChange={(e) => setRemarkText(e.target.value)}
+          placeholder="Enter follow-up details…"
+        />
+      </Modal>
+
+      <Modal
+        open={deleteTarget != null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete claim?"
+        footer={
+          <>
+            <button type="button" className="adt-btn adt-btn-secondary" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="adt-btn adt-btn-danger"
+              onClick={confirmDelete}
+              disabled={deletingClaimId != null}
+            >
+              {deletingClaimId ? "Deleting…" : "Delete permanently"}
+            </button>
+          </>
+        }
+      >
+        <p className="m-0 text-sm text-slate-600">
+          This cannot be undone. All remarks and status history for this claim will be removed.
+        </p>
+      </Modal>
     </section>
   );
 }

@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --adt-blue: #1b5ea8;
-  --adt-blue-dark: #134785;
+  --adt-blue: #0078c8;
+  --adt-blue-dark: #006ba3;
   --adt-blue-light: #e8f1fb;
   --adt-green: #72bf44;
   --adt-green-dark: #5a9935;
@@ -36,6 +36,20 @@
 
 .quotation-module-root .adt-layout {
   min-height: auto;
+}
+
+.quotation-module-root .adt-sidebar {
+  min-height: 0;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: calc(100vh - 120px);
+}
+
+.quotation-module-root .adt-layout {
+  border-radius: var(--adt-radius);
+  overflow: hidden;
+  box-shadow: var(--adt-shadow-md);
 }
 
 ::selection {
@@ -192,6 +206,33 @@
   margin-top: 2px;
 }
 
+.adt-topbar-search-btn {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--adt-blue-dark);
+  background: var(--adt-page);
+  border: 1px solid var(--adt-border);
+  border-radius: var(--adt-radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.adt-topbar-search-btn:hover {
+  background: var(--adt-blue-light);
+  border-color: var(--adt-blue);
+}
+
+.adt-topbar-search-btn kbd {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--adt-surface);
+  border: 1px solid var(--adt-border);
+  font-size: 10px;
+}
+
 .adt-topbar-hint {
   font-size: 12px;
   color: var(--adt-muted);
@@ -343,68 +384,9 @@
   letter-spacing: -0.03em;
 }
 
-/* Buttons */
-.adt-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 9px 16px;
-  border-radius: var(--adt-radius-sm);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: inherit;
-  border: 1px solid transparent;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+/* Buttons: base + ADT variants live in src/index.css (shared .adt-btn--*) */
+.quotation-module-root .adt-btn {
   white-space: nowrap;
-}
-
-.adt-btn:active {
-  transform: scale(0.98);
-}
-
-.adt-btn--primary {
-  background: var(--adt-green);
-  color: #fff;
-  border-color: var(--adt-green-dark);
-  box-shadow: 0 2px 8px rgba(114, 191, 68, 0.35);
-}
-
-.adt-btn--primary:hover {
-  background: var(--adt-green-dark);
-}
-
-.adt-btn--secondary {
-  background: var(--adt-surface);
-  color: var(--adt-blue-dark);
-  border-color: var(--adt-border);
-}
-
-.adt-btn--secondary:hover {
-  background: var(--adt-blue-light);
-  border-color: #b8cce8;
-}
-
-.adt-btn--navy {
-  background: var(--adt-blue);
-  color: #fff;
-  border-color: var(--adt-blue-dark);
-  box-shadow: 0 2px 8px rgba(27, 94, 168, 0.3);
-}
-
-.adt-btn--navy:hover {
-  background: var(--adt-blue-dark);
-}
-
-.adt-btn--danger {
-  background: #fef2f2;
-  color: #b91c1c;
-  border-color: #fecaca;
-}
-
-.adt-btn--danger:hover {
-  background: #fee2e2;
 }
 
 .adt-link-btn {
@@ -738,7 +720,7 @@
   position: fixed;
   right: 20px;
   bottom: 20px;
-  z-index: 80;
+  z-index: 200;
   background: var(--adt-blue-dark);
   color: #fff;
   border-radius: var(--adt-radius-sm);

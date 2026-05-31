@@ -67,7 +67,7 @@ function FollowUpPanel({ title, rows, onRemark }) {
                 <td className="px-2 py-1">
                   <button
                     type="button"
-                    className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700"
+                    className="adt-btn adt-btn-primary adt-btn-sm"
                     onClick={() => onRemark(row.id)}
                   >
                     Add Follow-up
@@ -100,6 +100,8 @@ export default function DashboardPage() {
   const [kpiTotal, setKpiTotal] = useState(0);
   const [kpiPage, setKpiPage] = useState(1);
   const [kpiLoading, setKpiLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const kpiTotalPages = useMemo(() => Math.max(1, Math.ceil(kpiTotal / 20)), [kpiTotal]);
 
@@ -126,17 +128,41 @@ export default function DashboardPage() {
   useEffect(() => {
     let ignore = false;
     async function init() {
-      const [overallRes, operationsRes, metaRes] = await Promise.all([
-        client.get("/dashboard/overall"),
-        client.get("/dashboard/operations"),
-        client.get("/meta"),
-      ]);
-      if (ignore) return;
-      setOverall(overallRes.data);
-      setOperations(operationsRes.data);
-      setInsurers(metaRes.data.insurers || []);
-      if (metaRes.data.insurers?.length) {
-        setSelectedInsurer((prev) => prev || metaRes.data.insurers[0]);
+      setLoading(true);
+      setLoadError("");
+      try {
+        const [overallRes, operationsRes, metaRes] = await Promise.allSettled([
+          client.get("/dashboard/overall"),
+          client.get("/dashboard/operations"),
+          client.get("/meta"),
+        ]);
+        if (ignore) return;
+
+        if (overallRes.status !== "fulfilled") {
+          throw new Error(overallRes.reason?.response?.data?.message || "Could not load dashboard summary");
+        }
+        if (operationsRes.status !== "fulfilled") {
+          throw new Error(
+            operationsRes.reason?.response?.data?.message || "Could not load operations panels"
+          );
+        }
+
+        setOverall(overallRes.value.data);
+        setOperations(operationsRes.value.data);
+
+        if (metaRes.status === "fulfilled") {
+          const list = metaRes.value.data.insurers || [];
+          setInsurers(list);
+          if (list.length) {
+            setSelectedInsurer((prev) => prev || list[0]);
+          }
+        }
+      } catch (error) {
+        if (!ignore) {
+          setLoadError(error.message || "Failed to load dashboard");
+        }
+      } finally {
+        if (!ignore) setLoading(false);
       }
     }
     init();
@@ -196,8 +222,30 @@ export default function DashboardPage() {
 
   const agingRows = useMemo(() => overall?.agingBreakdown || [], [overall]);
 
-  if (!overall || !operations) {
-    return <div className="rounded-xl bg-white p-4 shadow-sm">Loading dashboard...</div>;
+  if (loading) {
+    return (
+      <div className="adt-card space-y-3 p-6">
+        <div className="adt-skeleton h-8 w-48" />
+        <div className="grid gap-3 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="adt-skeleton h-20 rounded-xl" />
+          ))}
+        </div>
+        <p className="text-sm text-slate-500">Loading dashboard…</p>
+      </div>
+    );
+  }
+
+  if (loadError || !overall || !operations) {
+    return (
+      <div className="adt-card p-6">
+        <p className="adt-empty-title">Could not load dashboard</p>
+        <p className="adt-empty-text">{loadError || "Dashboard data is unavailable."}</p>
+        <button type="button" className="adt-btn adt-btn-primary" onClick={() => window.location.reload()}>
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -226,7 +274,7 @@ export default function DashboardPage() {
               {lifecycleFilter === "open" ? "Open claims" : "Closed claims"}
               <span className="ml-2 text-sm font-normal text-slate-500">({kpiTotal} total)</span>
             </h3>
-            <Link to="/claims" className="text-sm text-blue-700 hover:underline">
+            <Link to="/claims" className="text-sm font-semibold hover:underline" style={{ color: "var(--adt-blue)" }}>
               Full register
             </Link>
           </div>
@@ -260,7 +308,7 @@ export default function DashboardPage() {
                   kpiClaims.map((claim) => (
                     <tr key={claim.id} className="border-t border-slate-100">
                       <td className="px-2 py-2">
-                        <Link className="text-blue-700 hover:underline" to={`/claims/${claim.id}`}>
+                        <Link className="font-semibold hover:underline" style={{ color: "var(--adt-blue)" }} to={`/claims/${claim.id}`}>
                           {claim.id}
                         </Link>
                       </td>

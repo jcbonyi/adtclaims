@@ -1,8 +1,5 @@
-/**
- * Claim statuses grouped by workflow stage (intake → investigation → … → closed).
- * CLAIM_STATUSES is the flattened list used for validation and filters.
- */
-export const CLAIM_STATUS_GROUPS = [
+/** Claim statuses grouped by workflow stage — keep in sync with frontend/src/utils/constants.js */
+const CLAIM_STATUS_GROUPS = [
   {
     label: "1. Intake & notification",
     statuses: ["Reported", "Not Reported", "Undocumented"],
@@ -123,10 +120,9 @@ export const CLAIM_STATUS_GROUPS = [
   },
 ];
 
-export const CLAIM_STATUSES = CLAIM_STATUS_GROUPS.flatMap((group) => group.statuses);
+const CLAIM_STATUSES = CLAIM_STATUS_GROUPS.flatMap((group) => group.statuses);
 
-/** Statuses that count as closed for lifecycle filters, dashboards, and closure date. */
-export const CLOSED_STATUSES = [
+const CLOSED_STATUS_LIST = [
   "Closed",
   "Closed Without Payment",
   "Closed With Payment",
@@ -140,4 +136,8 @@ export const CLOSED_STATUSES = [
   "General Average Settled",
 ];
 
-export const AGING_BUCKETS = ["0-7", "8-14", "15-30", "30+"];
+module.exports = {
+  CLAIM_STATUS_GROUPS,
+  CLAIM_STATUSES,
+  CLOSED_STATUS_LIST,
+};

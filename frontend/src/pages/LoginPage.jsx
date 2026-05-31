@@ -14,6 +14,7 @@ export default function LoginPage() {
     resetKey: "",
   });
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
 
   useEffect(() => {
@@ -42,30 +43,36 @@ export default function LoginPage() {
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
+    setInfo("");
     const result =
       mode === "login"
         ? await login(form.email, form.password)
         : mode === "bootstrap"
-        ? await bootstrapAdmin(form.name, form.email, form.password)
-        : await resetAdminPassword(form.email, form.newPassword, form.resetKey);
+          ? await bootstrapAdmin(form.name, form.email, form.password)
+          : await resetAdminPassword(form.email, form.newPassword, form.resetKey);
     if (!result.ok) {
       if (mode === "bootstrap" && result.message === "Bootstrap already completed") {
         setMode("login");
         setBootstrapRequired(false);
-        setError("Admin account already exists. Please sign in.");
+        setInfo("Admin account already exists. Please sign in.");
         return;
       }
       setError(result.message);
     } else if (mode === "reset") {
       setMode("login");
-      setError("Password reset successful. Sign in with your new password.");
+      setInfo("Password reset successful. Sign in with your new password.");
       setForm((prev) => ({ ...prev, password: "", newPassword: "", resetKey: "" }));
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-xl bg-white p-6 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center p-4" style={{ background: "var(--adt-page)" }}>
+      <div className="adt-brand-bar fixed left-0 right-0 top-0" aria-hidden="true" />
+      <form
+        onSubmit={onSubmit}
+        className="adt-card mt-4 w-full max-w-md p-6 sm:p-8"
+        style={{ boxShadow: "var(--adt-shadow-md)" }}
+      >
         <div className="mb-6 flex justify-center">
           <img
             src="/adt-logo.png"
@@ -73,20 +80,20 @@ export default function LoginPage() {
             className="h-12 w-auto max-w-full object-contain sm:h-14"
           />
         </div>
-        <h1 className="mb-1 text-xl font-semibold text-slate-900">Insurance Claims Tracker</h1>
-        <p className="mb-6 text-sm text-slate-600">
+        <h1 className="adt-page-title text-center">ADT Insurance Platform</h1>
+        <p className="adt-page-subtitle mb-6 text-center">
           {mode === "login"
-            ? "Sign in with your account."
+            ? "Sign in to Claims Tracker or Quotation Register."
             : mode === "bootstrap"
-            ? "Bootstrap first admin account."
-            : "Reset an existing admin password."}
+              ? "Create the first administrator account."
+              : "Reset an administrator password."}
         </p>
 
         {mode === "bootstrap" && (
           <label className="mb-3 block">
-            <span className="mb-1 block text-sm text-slate-700">Full Name</span>
+            <span className="adt-label">Full name</span>
             <input
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="adt-input"
               value={form.name}
               onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
               required
@@ -95,44 +102,47 @@ export default function LoginPage() {
         )}
 
         <label className="mb-3 block">
-          <span className="mb-1 block text-sm text-slate-700">Email</span>
+          <span className="adt-label">Email</span>
           <input
             type="email"
-            className="w-full rounded-md border border-slate-300 px-3 py-2"
+            className="adt-input"
             value={form.email}
             onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
             required
+            autoComplete="email"
           />
         </label>
 
         {mode !== "reset" ? (
           <label className="mb-3 block">
-            <span className="mb-1 block text-sm text-slate-700">Password</span>
+            <span className="adt-label">Password</span>
             <input
               type="password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="adt-input"
               value={form.password}
               onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
               required
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
             />
           </label>
         ) : (
           <>
             <label className="mb-3 block">
-              <span className="mb-1 block text-sm text-slate-700">New Password</span>
+              <span className="adt-label">New password</span>
               <input
                 type="password"
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="adt-input"
                 value={form.newPassword}
                 onChange={(e) => setForm((prev) => ({ ...prev, newPassword: e.target.value }))}
                 required
+                autoComplete="new-password"
               />
             </label>
             <label className="mb-3 block">
-              <span className="mb-1 block text-sm text-slate-700">Admin Reset Key</span>
+              <span className="adt-label">Admin reset key</span>
               <input
                 type="password"
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="adt-input"
                 value={form.resetKey}
                 onChange={(e) => setForm((prev) => ({ ...prev, resetKey: e.target.value }))}
                 required
@@ -141,60 +151,62 @@ export default function LoginPage() {
           </>
         )}
 
-        {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="adt-alert adt-alert-error mb-3">{error}</p> : null}
+        {info ? <p className="adt-alert adt-alert-info mb-3">{info}</p> : null}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-60"
-        >
+        <button type="submit" disabled={loading} className="adt-btn adt-btn-accent w-full">
           {loading
-            ? "Please wait..."
+            ? "Please wait…"
             : mode === "login"
-            ? "Login"
-            : mode === "bootstrap"
-            ? "Create Admin"
-            : "Reset Password"}
+              ? "Sign in"
+              : mode === "bootstrap"
+                ? "Create admin"
+                : "Reset password"}
         </button>
 
-        {mode === "login" ? (
-          <button
-            type="button"
-            className="mt-3 text-sm text-blue-700"
-            onClick={() => {
-              setMode("reset");
-              setError("");
-            }}
-          >
-            Forgot admin password?
-          </button>
-        ) : null}
+        <div className="mt-4 flex flex-col gap-2 text-center text-sm">
+          {mode === "login" ? (
+            <button
+              type="button"
+              className="adt-btn adt-btn-ghost w-full"
+              onClick={() => {
+                setMode("reset");
+                setError("");
+                setInfo("");
+              }}
+            >
+              Forgot admin password?
+            </button>
+          ) : null}
 
-        {bootstrapRequired || mode === "bootstrap" ? (
-          <button
-            type="button"
-            className="mt-3 text-sm text-blue-700"
-            onClick={() => {
-              setMode((prev) => (prev === "login" ? "bootstrap" : "login"));
-              setError("");
-            }}
-          >
-            {mode === "login" ? "Need to create first admin?" : "Back to login"}
-          </button>
-        ) : null}
+          {bootstrapRequired || mode === "bootstrap" ? (
+            <button
+              type="button"
+              className="adt-btn adt-btn-ghost w-full"
+              onClick={() => {
+                setMode((prev) => (prev === "login" ? "bootstrap" : "login"));
+                setError("");
+                setInfo("");
+              }}
+            >
+              {mode === "login" ? "Create first admin account" : "Back to sign in"}
+            </button>
+          ) : null}
 
-        {mode === "reset" ? (
-          <button
-            type="button"
-            className="mt-3 text-sm text-blue-700"
-            onClick={() => {
-              setMode("login");
-              setError("");
-            }}
-          >
-            Back to login
-          </button>
-        ) : null}
+          {mode === "reset" ? (
+            <button
+              type="button"
+              className="adt-btn adt-btn-ghost w-full"
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setInfo("");
+              }}
+            >
+              Back to sign in
+            </button>
+          ) : null}
+        </div>
       </form>
     </div>
   );

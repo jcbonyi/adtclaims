@@ -67,7 +67,7 @@ export function FollowUpView({ onOpenClient }) {
                 </div>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                <Button tone="navy" onClick={() => setLogFor(q)}>Log follow-up</Button>
+                <Button tone="accent" onClick={() => setLogFor(q)}>Log follow-up</Button>
                 <Button onClick={() => onOpenClient(q.id)}>View record</Button>
               </div>
             </div>

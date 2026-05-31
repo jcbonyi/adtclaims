@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { CLAIM_STATUSES } from "../utils/constants";
+import PageHeader from "../components/PageHeader";
+import StatusSelectOptions from "../components/StatusSelectOptions";
+import { useToast } from "../context/ToastContext";
 import { formatCurrency, formatDate, toDateInputString } from "../utils/format";
 
 const blankClaim = {
@@ -55,6 +57,7 @@ export default function ClaimDetailPage({ mode }) {
   const [history, setHistory] = useState([]);
   const [newRemark, setNewRemark] = useState("");
   const [saving, setSaving] = useState(false);
+  const { notify } = useToast();
 
   const title = useMemo(
     () => (mode === "create" ? "Create New Claim" : `Claim #${id}`),
@@ -97,11 +100,15 @@ export default function ClaimDetailPage({ mode }) {
       };
       if (mode === "create") {
         const res = await client.post("/claims", payload);
+        notify("Claim created.", "success");
         navigate(`/claims/${res.data.id}`);
       } else {
         await client.put(`/claims/${id}`, payload);
         await loadClaim();
+        notify("Changes saved.", "success");
       }
+    } catch {
+      notify("Could not save claim.", "error");
     } finally {
       setSaving(false);
     }
@@ -114,23 +121,42 @@ export default function ClaimDetailPage({ mode }) {
     await loadClaim();
   }
 
-  const fieldClass = "w-full rounded-md border border-slate-300 px-3 py-2 text-sm";
+  const fieldClass = "adt-input";
+  const labelClass = "adt-label";
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-xl bg-white p-4 shadow-sm">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          {mode === "edit" ? <p className="text-sm text-slate-500">Status and remarks are fully audited.</p> : null}
-        </div>
-        <Link to="/claims" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-          Back to Register
-        </Link>
-      </div>
+      <PageHeader
+        title={title}
+        subtitle={mode === "edit" ? "Status changes and remarks are fully audited." : "Enter claim details below."}
+        actions={
+          <Link to="/claims" className="adt-btn adt-btn-secondary">
+            ← Register
+          </Link>
+        }
+      >
+        <nav className="adt-breadcrumb mb-2">
+          <Link to="/dashboard">Dashboard</Link>
+          <span aria-hidden="true">/</span>
+          <Link to="/claims">Claims</Link>
+          {mode === "edit" ? (
+            <>
+              <span aria-hidden="true">/</span>
+              <span>#{id}</span>
+            </>
+          ) : (
+            <>
+              <span aria-hidden="true">/</span>
+              <span>New</span>
+            </>
+          )}
+        </nav>
+      </PageHeader>
 
-      <form className="grid gap-4 rounded-xl bg-white p-4 shadow-sm md:grid-cols-2" onSubmit={saveClaim}>
+      <form className="adt-card grid gap-4 p-4 md:grid-cols-2" onSubmit={saveClaim}>
+        <p className="md:col-span-2 text-xs font-bold uppercase tracking-wide text-slate-500">Policy & parties</p>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Insurer</span>
+          <span className={labelClass}>Insurer</span>
           <input
             className={fieldClass}
             value={claim.insurer}
@@ -140,7 +166,7 @@ export default function ClaimDetailPage({ mode }) {
           />
         </label>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Claim Type</span>
+          <span className={labelClass}>Claim Type</span>
           <select
             className={fieldClass}
             value={claim.claimType}
@@ -152,7 +178,7 @@ export default function ClaimDetailPage({ mode }) {
           </select>
         </label>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Cover Type</span>
+          <span className={labelClass}>Cover Type</span>
           <input
             className={fieldClass}
             value={claim.coverType}
@@ -162,7 +188,7 @@ export default function ClaimDetailPage({ mode }) {
           />
         </label>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Insured Name</span>
+          <span className={labelClass}>Insured Name</span>
           <input
             className={fieldClass}
             value={claim.insuredName}
@@ -172,7 +198,7 @@ export default function ClaimDetailPage({ mode }) {
           />
         </label>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Registration Number / Name</span>
+          <span className={labelClass}>Registration Number / Name</span>
           <input
             className={fieldClass}
             value={claim.registrationNumber}
@@ -182,24 +208,20 @@ export default function ClaimDetailPage({ mode }) {
           />
         </label>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Status</span>
+          <span className={labelClass}>Status</span>
           <select
             className={fieldClass}
             value={claim.claimStatus}
             onChange={(e) => setClaim((prev) => ({ ...prev, claimStatus: e.target.value }))}
             disabled={!canEdit}
           >
-            {CLAIM_STATUSES.map((status) => (
-              <option value={status} key={status}>
-                {status}
-              </option>
-            ))}
+            <StatusSelectOptions />
           </select>
         </label>
 
         {claim.claimStatus === "Other" ? (
           <label className="md:col-span-2">
-            <span className="mb-1 block text-sm text-slate-700">Other Status Text</span>
+            <span className={labelClass}>Other Status Text</span>
             <input
               className={fieldClass}
               value={claim.claimStatusOther}
@@ -209,6 +231,7 @@ export default function ClaimDetailPage({ mode }) {
           </label>
         ) : null}
 
+        <p className="md:col-span-2 mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">Key dates</p>
         {[
           ["accidentDate", "Date of Accident/Loss"],
           ["reportedToBrokerDate", "Date Reported to Broker (ADT)"],
@@ -218,7 +241,7 @@ export default function ClaimDetailPage({ mode }) {
           ["dateVehicleReleased", "Date Vehicle Released"],
         ].map(([key, label]) => (
           <label key={key}>
-            <span className="mb-1 block text-sm text-slate-700">{label}</span>
+            <span className={labelClass}>{label}</span>
             <input
               type="date"
               className={fieldClass}
@@ -229,8 +252,9 @@ export default function ClaimDetailPage({ mode }) {
           </label>
         ))}
 
+        <p className="md:col-span-2 mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">Financials</p>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Vehicle Value (KES)</span>
+          <span className={labelClass}>Vehicle Value (KES)</span>
           <input
             type="number"
             className={fieldClass}
@@ -240,7 +264,7 @@ export default function ClaimDetailPage({ mode }) {
           />
         </label>
         <label>
-          <span className="mb-1 block text-sm text-slate-700">Repair Estimate (KES)</span>
+          <span className={labelClass}>Repair Estimate (KES)</span>
           <input
             type="number"
             className={fieldClass}
@@ -250,7 +274,7 @@ export default function ClaimDetailPage({ mode }) {
           />
         </label>
         <label className="md:col-span-2">
-          <span className="mb-1 block text-sm text-slate-700">Garage / Repairer</span>
+          <span className={labelClass}>Garage / Repairer</span>
           <input
             className={fieldClass}
             value={claim.garage}
@@ -263,7 +287,7 @@ export default function ClaimDetailPage({ mode }) {
           <button
             type="submit"
             disabled={saving}
-            className="md:col-span-2 rounded-md bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-60"
+            className={`adt-btn md:col-span-2 ${mode === "create" ? "adt-btn-accent" : "adt-btn-primary"}`}
           >
             {saving ? "Saving..." : mode === "create" ? "Create Claim" : "Save Changes"}
           </button>
@@ -272,8 +296,8 @@ export default function ClaimDetailPage({ mode }) {
 
       {mode === "edit" ? (
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl bg-white p-4 shadow-sm">
-            <h3 className="mb-2 text-base font-semibold text-slate-900">Activity Remarks (Append-Only)</h3>
+          <div className="adt-card p-4">
+            <h3 className="mb-2 text-base font-semibold text-slate-900">Activity remarks</h3>
             {canEdit ? (
               <div className="mb-3 flex gap-2">
                 <input
@@ -284,7 +308,7 @@ export default function ClaimDetailPage({ mode }) {
                 />
                 <button
                   type="button"
-                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                  className="adt-btn adt-btn-accent shrink-0"
                   onClick={appendRemark}
                 >
                   Add
@@ -304,8 +328,8 @@ export default function ClaimDetailPage({ mode }) {
             </ul>
           </div>
 
-          <div className="rounded-xl bg-white p-4 shadow-sm">
-            <h3 className="mb-2 text-base font-semibold text-slate-900">Status Transition History</h3>
+          <div className="adt-card p-4">
+            <h3 className="mb-2 text-base font-semibold text-slate-900">Status history</h3>
             <ul className="space-y-2">
               {history.map((item) => (
                 <li key={item.id} className="rounded border border-slate-200 p-2 text-sm">
@@ -324,7 +348,7 @@ export default function ClaimDetailPage({ mode }) {
       ) : null}
 
       {mode === "edit" ? (
-        <div className="rounded-xl bg-white p-4 text-sm text-slate-600 shadow-sm">
+        <div className="adt-card p-4 text-sm text-slate-600">
           <p>
             Vehicle Value: <span className="font-medium text-slate-900">{formatCurrency(claim.vehicleValue)}</span>
           </p>

@@ -35,7 +35,7 @@ export function FollowUpLogModal({ clientLabel, onClose, onSubmit }) {
         />
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 16 }}>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" tone="navy">Save entry</Button>
+          <Button type="submit" tone="accent">Save entry</Button>
         </div>
       </form>
     </Modal>

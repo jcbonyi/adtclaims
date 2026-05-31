@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { QuotationProvider } from "./context/QuotationProvider";
 import { UiProvider } from "./context/UiProvider";
@@ -11,6 +11,7 @@ import { ClientDetail } from "./components/ClientDetail";
 import { useQuotations } from "./context/useQuotations";
 import { useUi } from "./context/uiContext";
 import { quotationPath } from "./basePath";
+import { QuickSearchModal } from "./components/QuickSearchModal";
 import "./quotationRegister.css";
 
 function QuotationShell() {
@@ -18,34 +19,37 @@ function QuotationShell() {
   const location = useLocation();
   const { state } = useQuotations();
   const { notify } = useUi();
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const openClient = (id) => {
     navigate(quotationPath(`client/${id}`), { state: { from: location.pathname } });
   };
 
+  function runQuickSearch(query) {
+    const found = state.quotations.find((q) =>
+      q.clientName.toLowerCase().includes(query.toLowerCase())
+    );
+    if (found) {
+      navigate(quotationPath(`client/${found.id}`), { state: { from: location.pathname } });
+    } else {
+      notify("No client matched that search.");
+    }
+  }
+
   useEffect(() => {
     const onKeyDown = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        const query = window.prompt("Quick search client name");
-        if (!query) return;
-        const found = state.quotations.find((q) =>
-          q.clientName.toLowerCase().includes(query.toLowerCase())
-        );
-        if (found) {
-          navigate(quotationPath(`client/${found.id}`), { state: { from: location.pathname } });
-        } else {
-          notify("No client matched that search.");
-        }
+        setSearchOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [state.quotations, notify, location.pathname, navigate]);
+  }, []);
 
   return (
     <div className="quotation-module-root">
-      <AppLayout>
+      <AppLayout onOpenSearch={() => setSearchOpen(true)}>
         <Routes>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard onOpenClient={openClient} />} />
@@ -56,6 +60,11 @@ function QuotationShell() {
           <Route path="*" element={<Navigate to="dashboard" replace />} />
         </Routes>
       </AppLayout>
+      <QuickSearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSearch={runQuickSearch}
+      />
     </div>
   );
 }

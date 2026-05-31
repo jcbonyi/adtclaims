@@ -170,7 +170,7 @@ export function QuotationFormModal({ onClose, initial, onSave, title }) {
         {error ? <div className="adt-form-error">{error}</div> : null}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" tone="navy">Save</Button>
+          <Button type="submit" tone="accent">Save</Button>
         </div>
       </form>
     </Modal>
