@@ -55,6 +55,9 @@ export default function ShellLayout() {
         <NavLink to="/claims/new" className={navItem}>
           Add Claim
         </NavLink>
+        <NavLink to="/quotations" className={navItem}>
+          Quotation Register
+        </NavLink>
         {user?.role === "Admin" ? (
           <NavLink to="/users" className={navItem}>
             User Management
@@ -62,7 +65,13 @@ export default function ShellLayout() {
         ) : null}
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 pb-8">
+      <main
+        className={
+          location.pathname.startsWith("/quotations")
+            ? "pb-8"
+            : "mx-auto max-w-7xl px-4 pb-8"
+        }
+      >
         <Outlet />
       </main>
     </div>
