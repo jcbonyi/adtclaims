@@ -216,4 +216,49 @@ export function addDashboardWorksheet(workbook, opts) {
   return sheet;
 }
 
-export { BRAND, thinBorder, styleHeaderCell };
+export function safeAddDashboardWorksheet(workbook, opts) {
+  try {
+    return addDashboardWorksheet(workbook, opts);
+  } catch (err) {
+    console.warn("Dashboard worksheet build failed, using fallback:", err);
+    const existing = workbook.getWorksheet("Dashboard");
+    if (existing) {
+      workbook.removeWorksheet(existing.id);
+    }
+    const sheet = workbook.addWorksheet("Dashboard");
+    sheet.getCell(1, 1).value = opts.reportTitle || "Dashboard";
+    sheet.getCell(2, 1).value =
+      opts.filterSummary ||
+      `Summary · ${opts.recordCount ?? 0} ${opts.recordLabel ?? "records"}`;
+    return sheet;
+  }
+}
+
+function pinDashboardTabFirst(workbook) {
+  const dashboard = workbook.getWorksheet("Dashboard");
+  if (!dashboard) return;
+  dashboard.orderNo = 0;
+  let n = 1;
+  for (const sheet of workbook.worksheets) {
+    if (sheet.name === "Dashboard") continue;
+    sheet.orderNo = n;
+    n += 1;
+  }
+}
+
+export function setWorkbookOpensOnDashboard(workbook) {
+  pinDashboardTabFirst(workbook);
+  workbook.views = [
+    {
+      x: 0,
+      y: 0,
+      width: 20000,
+      height: 12000,
+      firstSheet: 0,
+      activeTab: 0,
+      visibility: "visible",
+    },
+  ];
+}
+
+export { BRAND, thinBorder };

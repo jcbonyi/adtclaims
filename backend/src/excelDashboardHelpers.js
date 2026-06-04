@@ -228,6 +228,53 @@ function addDashboardWorksheet(workbook, opts) {
   return sheet;
 }
 
+/** Always insert Dashboard as the first tab; fall back to a minimal sheet if layout fails. */
+function safeAddDashboardWorksheet(workbook, opts) {
+  try {
+    return addDashboardWorksheet(workbook, opts);
+  } catch (err) {
+    console.warn("Dashboard worksheet build failed, using fallback:", err.message);
+    const existing = workbook.getWorksheet("Dashboard");
+    if (existing) {
+      workbook.removeWorksheet(existing.id);
+    }
+    const sheet = workbook.addWorksheet("Dashboard");
+    sheet.getCell(1, 1).value = opts.reportTitle || "Dashboard";
+    sheet.getCell(2, 1).value =
+      opts.filterSummary ||
+      `Summary · ${opts.recordCount ?? 0} ${opts.recordLabel ?? "records"}`;
+    return sheet;
+  }
+}
+
+/** ExcelJS ignores addWorksheet index; reorder tabs so Dashboard is first. */
+function pinDashboardTabFirst(workbook) {
+  const dashboard = workbook.getWorksheet("Dashboard");
+  if (!dashboard) return;
+  dashboard.orderNo = 0;
+  let n = 1;
+  for (const sheet of workbook.worksheets) {
+    if (sheet.name === "Dashboard") continue;
+    sheet.orderNo = n;
+    n += 1;
+  }
+}
+
+function setWorkbookOpensOnDashboard(workbook) {
+  pinDashboardTabFirst(workbook);
+  workbook.views = [
+    {
+      x: 0,
+      y: 0,
+      width: 20000,
+      height: 12000,
+      firstSheet: 0,
+      activeTab: 0,
+      visibility: "visible",
+    },
+  ];
+}
+
 module.exports = {
   BRAND,
   thinBorder,
@@ -236,5 +283,7 @@ module.exports = {
   countBy,
   topN,
   addDashboardWorksheet,
+  safeAddDashboardWorksheet,
+  setWorkbookOpensOnDashboard,
   styleHeaderCell,
 };

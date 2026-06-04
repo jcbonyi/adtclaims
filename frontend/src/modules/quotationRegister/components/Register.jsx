@@ -3,6 +3,11 @@ import { FILTERS_STORAGE_KEY, THEME } from '../constants'
 import { useQuotations } from '../context/useQuotations'
 import { useUi } from '../context/uiContext'
 import { daysOpen, formatDisplayDate } from '../utils/dates'
+import {
+  buildQuotationFilterSummary,
+  buildQuotationManagementWorkbookBuffer,
+  downloadQuotationWorkbook,
+} from '../utils/quotationExportExcel'
 import { StatusBadge } from './StatusBadge'
 import { QuotationFormModal } from './QuotationFormModal'
 import { Modal } from './Modal'
@@ -136,11 +141,6 @@ export function Register({
   const handleExport = async () => {
     setExporting(true)
     try {
-      const {
-        buildQuotationFilterSummary,
-        buildQuotationManagementWorkbookBuffer,
-        downloadQuotationWorkbook,
-      } = await import('../utils/quotationExportExcel')
       const filterSummary = buildQuotationFilterSummary({
         search,
         status: fStatus,
@@ -154,7 +154,8 @@ export function Register({
       })
       downloadQuotationWorkbook(buffer)
       notify(`Exported ${sorted.length} records to Excel.`)
-    } catch {
+    } catch (err) {
+      console.error('Quotation Excel export failed:', err)
       notify('Excel export failed. Please try again.')
     } finally {
       setExporting(false)

@@ -7,7 +7,8 @@ const {
   formatGeneratedAt,
   countBy,
   topN,
-  addDashboardWorksheet,
+  safeAddDashboardWorksheet,
+  setWorkbookOpensOnDashboard,
   styleHeaderCell,
 } = require("./excelDashboardHelpers");
 
@@ -226,8 +227,10 @@ async function buildClaimsManagementWorkbookBuffer(opts) {
   workbook.creator = "ADT Claims Tracker";
   workbook.created = new Date();
 
+  addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
+
   const summary = computeClaimsExportSummary(sourceRows);
-  addDashboardWorksheet(workbook, {
+  safeAddDashboardWorksheet(workbook, {
     reportTitle: "ADT Insurance — Claims dashboard",
     filterSummary,
     recordLabel: dataRowCount === 1 ? "claim" : "claims",
@@ -235,8 +238,7 @@ async function buildClaimsManagementWorkbookBuffer(opts) {
     kpis: summary.kpis,
     sections: summary.sections,
   });
-
-  addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
+  setWorkbookOpensOnDashboard(workbook);
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);

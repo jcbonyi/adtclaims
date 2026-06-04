@@ -139,6 +139,10 @@ export default function ClaimsRegisterPage() {
         responseType: "blob",
         params: appliedFilters,
       });
+      const contentType = res.headers["content-type"] || "";
+      if (res.status !== 200 || !contentType.includes("spreadsheetml")) {
+        throw new Error("Export failed — server did not return an Excel file.");
+      }
       const blob = new Blob([res.data], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
@@ -150,6 +154,9 @@ export default function ClaimsRegisterPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Claims Excel export failed:", err);
+      window.alert("Excel export failed. Restart the API server if this continues, then try again.");
     } finally {
       setExporting(false);
     }

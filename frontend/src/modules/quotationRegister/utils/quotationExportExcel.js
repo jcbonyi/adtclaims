@@ -8,7 +8,8 @@ import {
   formatGeneratedAt,
   countBy,
   topN,
-  addDashboardWorksheet,
+  safeAddDashboardWorksheet,
+  setWorkbookOpensOnDashboard,
   styleHeaderCell,
 } from "./excelDashboardHelpers";
 
@@ -278,8 +279,10 @@ export async function buildQuotationManagementWorkbookBuffer(opts) {
   workbook.creator = "ADT Quotation Tracker";
   workbook.created = new Date();
 
+  addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
+
   const summary = computeQuotationExportSummary(quotations);
-  addDashboardWorksheet(workbook, {
+  safeAddDashboardWorksheet(workbook, {
     reportTitle: "ADT Insurance — Quotation dashboard",
     filterSummary,
     recordLabel: dataRowCount === 1 ? "quotation" : "quotations",
@@ -287,8 +290,7 @@ export async function buildQuotationManagementWorkbookBuffer(opts) {
     kpis: summary.kpis,
     sections: summary.sections,
   });
-
-  addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
+  setWorkbookOpensOnDashboard(workbook);
 
   return workbook.xlsx.writeBuffer();
 }
