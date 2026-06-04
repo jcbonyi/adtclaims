@@ -1,6 +1,56 @@
+const fs = require("fs");
+const path = require("path");
 const { createCanvas } = require("canvas");
+const opentype = require("opentype.js");
 
 const CHART_COLORS = ["#0078C8", "#72BF44", "#006BA3", "#F59E0B", "#7C3AED", "#DB2777", "#14B8A6"];
+const FONT_DIR = path.join(__dirname, "..", "node_modules", "dejavu-fonts-ttf", "ttf");
+
+let regularFont = null;
+let boldFont = null;
+
+function loadFontFile(filename) {
+  return opentype.parse(fs.readFileSync(path.join(FONT_DIR, filename)));
+}
+
+function ensureChartFonts() {
+  if (regularFont && boldFont) return;
+  regularFont = loadFontFile("DejaVuSans.ttf");
+  boldFont = loadFontFile("DejaVuSans-Bold.ttf");
+}
+
+function glyphAdvance(face, glyph, fontSize) {
+  return (glyph.advanceWidth * fontSize) / face.unitsPerEm;
+}
+
+/** Per-glyph layout avoids opentype.js bidi errors on DejaVu. */
+function measureText(face, text, fontSize) {
+  let width = 0;
+  for (const ch of text) {
+    width += glyphAdvance(face, face.charToGlyph(ch), fontSize);
+  }
+  return width;
+}
+
+function truncateText(face, text, fontSize, maxWidth) {
+  if (measureText(face, text, fontSize) <= maxWidth) return text;
+  let s = text;
+  while (s.length > 1 && measureText(face, `${s}...`, fontSize) > maxWidth) {
+    s = s.slice(0, -1);
+  }
+  return `${s}...`;
+}
+
+function drawText(ctx, face, text, x, y, fontSize, fillStyle) {
+  let cursor = x;
+  for (const ch of text) {
+    const glyph = face.charToGlyph(ch);
+    const glyphPath = glyph.getPath(cursor, y, fontSize);
+    glyphPath.fill = fillStyle;
+    glyphPath.draw(ctx);
+    cursor += glyphAdvance(face, glyph, fontSize);
+  }
+}
 
 function toItems(rows) {
   return rows
@@ -8,50 +58,39 @@ function toItems(rows) {
     .filter((item) => item.value > 0);
 }
 
-function truncate(ctx, text, maxWidth) {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let s = text;
-  while (s.length > 1 && ctx.measureText(`${s}…`).width > maxWidth) {
-    s = s.slice(0, -1);
-  }
-  return `${s}…`;
+function drawTitle(ctx, face, title, width) {
+  const size = 15;
+  const text = truncateText(face, title, size, width - 24);
+  drawText(ctx, face, text, 12, 24, size, "#006BA3");
 }
 
-function drawTitle(ctx, title, width) {
-  ctx.fillStyle = "#006BA3";
-  ctx.font = "bold 15px Calibri, Arial, sans-serif";
-  ctx.fillText(truncate(ctx, title, width - 24), 12, 24);
-}
-
-function drawHorizontalBarChart(ctx, items, width, height) {
+function drawHorizontalBarChart(ctx, regular, items, width, height) {
   const top = 40;
   const left = 118;
   const rightPad = 16;
   const rowH = Math.min(32, (height - top - 12) / items.length);
   const maxVal = Math.max(...items.map((i) => i.value), 1);
   const barMaxW = width - left - rightPad;
+  const labelSize = 12;
 
   items.forEach((item, i) => {
     const y = top + i * rowH;
     const barW = Math.max(2, (item.value / maxVal) * barMaxW);
     const color = CHART_COLORS[i % CHART_COLORS.length];
+    const midY = y + rowH * 0.45;
 
-    ctx.fillStyle = "#1A2332";
-    ctx.font = "12px Calibri, Arial, sans-serif";
-    ctx.textAlign = "right";
-    ctx.textBaseline = "middle";
-    ctx.fillText(truncate(ctx, item.label, 100), left - 10, y + rowH * 0.45);
+    const label = truncateText(regular, item.label, labelSize, 100);
+    const labelW = measureText(regular, label, labelSize);
+    drawText(ctx, regular, label, left - 10 - labelW, midY + labelSize * 0.35, labelSize, "#1A2332");
 
     ctx.fillStyle = color;
     ctx.fillRect(left, y, barW, rowH * 0.62);
 
-    ctx.fillStyle = "#475569";
-    ctx.textAlign = "left";
-    ctx.fillText(String(item.value), left + barW + 6, y + rowH * 0.45);
+    drawText(ctx, regular, String(item.value), left + barW + 6, midY + labelSize * 0.35, labelSize, "#475569");
   });
 }
 
-function drawPieChart(ctx, items, width, height) {
+function drawPieChart(ctx, regular, items, width, height) {
   const cx = width * 0.36;
   const cy = height * 0.55;
   const radius = Math.min(width * 0.28, height * 0.38);
@@ -71,15 +110,14 @@ function drawPieChart(ctx, items, width, height) {
 
   let ly = 44;
   const lx = width * 0.62;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
+  const labelSize = 12;
+
   items.forEach((item, i) => {
     const pct = Math.round((item.value / total) * 1000) / 10;
     ctx.fillStyle = CHART_COLORS[i % CHART_COLORS.length];
     ctx.fillRect(lx, ly - 6, 12, 12);
-    ctx.fillStyle = "#1A2332";
-    ctx.font = "12px Calibri, Arial, sans-serif";
-    ctx.fillText(`${truncate(ctx, item.label, 140)} (${pct}%)`, lx + 18, ly);
+    const legend = `${truncateText(regular, item.label, labelSize, 140)} (${pct}%)`;
+    drawText(ctx, regular, legend, lx + 18, ly + labelSize * 0.35, labelSize, "#1A2332");
     ly += 20;
   });
 }
@@ -95,6 +133,8 @@ function renderChartPng(chartType, rows, title) {
   const items = toItems(rows);
   if (!items.length) return null;
 
+  ensureChartFonts();
+
   const pieItems = chartType === "pie" ? items.slice(0, 8) : items;
   const width = chartType === "pie" ? 480 : 520;
   const height =
@@ -107,11 +147,11 @@ function renderChartPng(chartType, rows, title) {
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, width, height);
 
-  drawTitle(ctx, title, width);
+  drawTitle(ctx, boldFont, title, width);
   if (chartType === "pie") {
-    drawPieChart(ctx, pieItems, width, height);
+    drawPieChart(ctx, regularFont, pieItems, width, height);
   } else {
-    drawHorizontalBarChart(ctx, items.slice(0, 12), width, height);
+    drawHorizontalBarChart(ctx, regularFont, items.slice(0, 12), width, height);
   }
 
   return canvas.toBuffer("image/png");

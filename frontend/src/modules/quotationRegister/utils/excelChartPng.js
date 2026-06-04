@@ -1,4 +1,7 @@
 const CHART_COLORS = ["#0078C8", "#72BF44", "#006BA3", "#F59E0B", "#7C3AED", "#DB2777", "#14B8A6"];
+/** System UI fonts — avoid Calibri in canvas (missing on many machines shows as boxes). */
+const FONT_TITLE = 'bold 15px "Segoe UI", Helvetica, Arial, sans-serif';
+const FONT_BODY = '12px "Segoe UI", Helvetica, Arial, sans-serif';
 
 function toItems(rows) {
   return rows
@@ -9,15 +12,15 @@ function toItems(rows) {
 function truncate(ctx, text, maxWidth) {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let s = text;
-  while (s.length > 1 && ctx.measureText(`${s}…`).width > maxWidth) {
+  while (s.length > 1 && ctx.measureText(`${s}...`).width > maxWidth) {
     s = s.slice(0, -1);
   }
-  return `${s}…`;
+  return `${s}...`;
 }
 
 function drawTitle(ctx, title, width) {
   ctx.fillStyle = "#006BA3";
-  ctx.font = "bold 15px Calibri, Arial, sans-serif";
+  ctx.font = FONT_TITLE;
   ctx.fillText(truncate(ctx, title, width - 24), 12, 24);
 }
 
@@ -35,7 +38,7 @@ function drawHorizontalBarChart(ctx, items, width, height) {
     const color = CHART_COLORS[i % CHART_COLORS.length];
 
     ctx.fillStyle = "#1A2332";
-    ctx.font = "12px Calibri, Arial, sans-serif";
+    ctx.font = FONT_BODY;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(truncate(ctx, item.label, 100), left - 10, y + rowH * 0.45);
@@ -76,7 +79,7 @@ function drawPieChart(ctx, items, width, height) {
     ctx.fillStyle = CHART_COLORS[i % CHART_COLORS.length];
     ctx.fillRect(lx, ly - 6, 12, 12);
     ctx.fillStyle = "#1A2332";
-    ctx.font = "12px Calibri, Arial, sans-serif";
+    ctx.font = FONT_BODY;
     ctx.fillText(`${truncate(ctx, item.label, 140)} (${pct}%)`, lx + 18, ly);
     ly += 20;
   });
