@@ -47,8 +47,32 @@ function QuotationShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  if (!state.ready) {
+    return (
+      <div className="quotation-module-root" style={{ padding: 24 }}>
+        <p>Loading quotation register…</p>
+      </div>
+    )
+  }
+
   return (
     <div className="quotation-module-root">
+      {state.loadError && (
+        <div
+          role="status"
+          style={{
+            margin: '0 0 12px',
+            padding: '10px 14px',
+            background: '#FEF3C7',
+            border: '1px solid #F59E0B',
+            borderRadius: 8,
+            color: '#92400E',
+            fontSize: 14,
+          }}
+        >
+          {state.loadError}
+        </div>
+      )}
       <AppLayout onOpenSearch={() => setSearchOpen(true)}>
         <Routes>
           <Route index element={<Navigate to="dashboard" replace />} />

@@ -1,9 +1,10 @@
-import { buildSeedQuotations } from './seedData'
 import { STORAGE_KEY } from './constants'
 
 export const initialState = {
   quotations: [],
   nextId: 1,
+  ready: false,
+  loadError: null,
 }
 
 function normalizeQuotation(row) {
@@ -42,15 +43,23 @@ export function loadPersistedState() {
 }
 
 export function getInitialReducerState() {
-  const persisted = loadPersistedState()
-  if (persisted) return persisted
-  const seed = buildSeedQuotations()
-  const maxId = seed.reduce((m, q) => Math.max(m, q.id), 0)
-  return { quotations: seed.map(normalizeQuotation), nextId: maxId + 1 }
+  return { ...initialState }
 }
 
 export function quotationReducer(state, action) {
   switch (action.type) {
+    case 'HYDRATE': {
+      const quotations = (action.payload.quotations || []).map(normalizeQuotation)
+      const maxId = quotations.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0)
+      return {
+        quotations,
+        nextId: Math.max(Number(action.payload.nextId) || 0, maxId + 1),
+        ready: true,
+        loadError: null,
+      }
+    }
+    case 'SET_LOAD_ERROR':
+      return { ...state, ready: true, loadError: action.payload }
     case 'ADD': {
       const id = state.nextId
       const row = normalizeQuotation({
@@ -61,6 +70,7 @@ export function quotationReducer(state, action) {
           : [],
       })
       return {
+        ...state,
         quotations: [...state.quotations, row],
         nextId: id + 1,
       }
@@ -101,6 +111,7 @@ export function quotationReducer(state, action) {
       const normalized = incoming.map(normalizeQuotation)
       const maxId = normalized.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0)
       return {
+        ...state,
         quotations: normalized,
         nextId: maxId + 1,
       }

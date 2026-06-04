@@ -13,6 +13,12 @@ const multer = require("multer");
 const xlsx = require("xlsx");
 const { buildClaimsManagementWorkbookBuffer } = require("./claimsExportExcel");
 const {
+  ensureQuotationsTable,
+  seedQuotationsIfEmpty,
+  registerQuotationRoutes,
+  QUOTATION_SNAPSHOT_COLUMNS,
+} = require("./quotations");
+const {
   CLAIM_STATUS_GROUPS,
   CLAIM_STATUSES,
   CLOSED_STATUS_LIST,
@@ -262,6 +268,8 @@ async function ensureDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await ensureQuotationsTable(pool);
 }
 
 async function authRequired(req, res, next) {
@@ -409,13 +417,15 @@ async function maybePersistInMemorySnapshot() {
   try {
     do {
       snapshotWriteQueued = false;
-      const [users, claims, claimRemarks, claimStatusHistory, userAuditLogs] = await Promise.all([
-        pool.query("SELECT * FROM users ORDER BY id ASC"),
-        pool.query("SELECT * FROM claims ORDER BY id ASC"),
-        pool.query("SELECT * FROM claim_remarks ORDER BY id ASC"),
-        pool.query("SELECT * FROM claim_status_history ORDER BY id ASC"),
-        pool.query("SELECT * FROM user_audit_logs ORDER BY id ASC"),
-      ]);
+      const [users, claims, claimRemarks, claimStatusHistory, userAuditLogs, quotations] =
+        await Promise.all([
+          pool.query("SELECT * FROM users ORDER BY id ASC"),
+          pool.query("SELECT * FROM claims ORDER BY id ASC"),
+          pool.query("SELECT * FROM claim_remarks ORDER BY id ASC"),
+          pool.query("SELECT * FROM claim_status_history ORDER BY id ASC"),
+          pool.query("SELECT * FROM user_audit_logs ORDER BY id ASC"),
+          pool.query("SELECT * FROM quotations ORDER BY id ASC"),
+        ]);
 
       const snapshot = {
         version: 1,
@@ -425,6 +435,7 @@ async function maybePersistInMemorySnapshot() {
         claimRemarks: claimRemarks.rows,
         claimStatusHistory: claimStatusHistory.rows,
         userAuditLogs: userAuditLogs.rows,
+        quotations: quotations.rows,
       };
 
       await fs.mkdir(path.dirname(SNAPSHOT_FILE_PATH), { recursive: true });
@@ -472,6 +483,7 @@ async function maybeLoadInMemorySnapshot() {
       await pool.query("DELETE FROM claim_status_history");
       await pool.query("DELETE FROM claim_remarks");
       await pool.query("DELETE FROM user_audit_logs");
+      await pool.query("DELETE FROM quotations");
       await pool.query("DELETE FROM claims");
       await pool.query("DELETE FROM users");
 
@@ -537,13 +549,18 @@ async function maybeLoadInMemorySnapshot() {
         ["id", "target_user_id", "target_email", "action", "details", "changed_by", "created_at"],
         snapshot.userAuditLogs || []
       );
+      await restoreSnapshotRows(
+        "quotations",
+        QUOTATION_SNAPSHOT_COLUMNS,
+        snapshot.quotations || []
+      );
 
       await pool.query("COMMIT");
 
       console.log(
         `Loaded in-memory snapshot: ${snapshot.users?.length || 0} users, ${
           snapshot.claims?.length || 0
-        } claims.`
+        } claims, ${snapshot.quotations?.length || 0} quotations.`
       );
     } catch (error) {
       await pool.query("ROLLBACK");
@@ -2144,6 +2161,7 @@ async function startServer() {
   try {
     await ensureDb();
     await maybeLoadInMemorySnapshot();
+    await seedQuotationsIfEmpty(pool, nextSerialId);
   } catch (error) {
     const isConnectionIssue =
       dbMode === "postgres" && (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND");
@@ -2160,7 +2178,15 @@ async function startServer() {
     dbMode = fallback.dbMode;
     await ensureDb();
     await maybeLoadInMemorySnapshot();
+    await seedQuotationsIfEmpty(pool, nextSerialId);
   }
+
+  registerQuotationRoutes(app, {
+    pool,
+    authRequired,
+    nextSerialId,
+    onPersist: maybePersistInMemorySnapshot,
+  });
 
   app.listen(PORT, () => {
     if (dbMode === "in-memory") {

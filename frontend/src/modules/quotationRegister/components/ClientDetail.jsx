@@ -155,9 +155,14 @@ export function ClientDetail() {
           onClose={() => setEditOpen(false)}
           initial={q}
           title="Edit quotation"
-          onSave={(payload) => {
-            dispatch({ type: 'UPDATE', payload: { id: q.id, patch: payload } })
-            notify('Quotation updated.')
+          onSave={async (payload) => {
+            try {
+              await dispatch({ type: 'UPDATE', payload: { id: q.id, patch: payload } })
+              notify('Quotation updated.')
+              setEditOpen(false)
+            } catch {
+              notify('Could not update quotation. Please try again.')
+            }
           }}
         />
       )}
@@ -166,13 +171,17 @@ export function ClientDetail() {
         <FollowUpLogModal
           clientLabel={q.clientName}
           onClose={() => setFollowOpen(false)}
-          onSubmit={({ date, note }) => {
-            dispatch({
-              type: 'LOG_FOLLOW_UP',
-              payload: { id: q.id, date, note },
-            })
-            notify('Follow-up entry saved.')
-            setFollowOpen(false)
+          onSubmit={async ({ date, note }) => {
+            try {
+              await dispatch({
+                type: 'LOG_FOLLOW_UP',
+                payload: { id: q.id, date, note },
+              })
+              notify('Follow-up entry saved.')
+              setFollowOpen(false)
+            } catch {
+              notify('Could not save follow-up. Please try again.')
+            }
           }}
         />
       )}

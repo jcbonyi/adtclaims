@@ -108,13 +108,17 @@ export function FollowUpView({ onOpenClient }) {
         <FollowUpLogModal
           clientLabel={logFor.clientName}
           onClose={() => setLogFor(null)}
-          onSubmit={({ date, note }) => {
-            dispatch({
-              type: 'LOG_FOLLOW_UP',
-              payload: { id: logFor.id, date, note },
-            })
-            notify('Follow-up entry saved.')
-            setLogFor(null)
+          onSubmit={async ({ date, note }) => {
+            try {
+              await dispatch({
+                type: 'LOG_FOLLOW_UP',
+                payload: { id: logFor.id, date, note },
+              })
+              notify('Follow-up entry saved.')
+              setLogFor(null)
+            } catch {
+              notify('Could not save follow-up. Please try again.')
+            }
           }}
         />
       )}

@@ -196,7 +196,7 @@ export function Register({
             : [],
         }
       })
-      dispatch({ type: 'IMPORT', payload: rows })
+      await dispatch({ type: 'IMPORT', payload: rows })
       notify(`Imported ${rows.length} records from CSV.`)
     } catch {
       notify('CSV import failed. Check header names and row formatting.')
@@ -360,12 +360,16 @@ export function Register({
           onClose={() => setAddOpen(false)}
           initial={null}
           title="Add quotation"
-          onSave={(payload) => {
-            dispatch({
-              type: 'ADD',
-              payload: { ...payload, followUpHistory: [] },
-            })
-            notify('Quotation added.')
+          onSave={async (payload) => {
+            try {
+              await dispatch({
+                type: 'ADD',
+                payload: { ...payload, followUpHistory: [] },
+              })
+              notify('Quotation added.')
+            } catch {
+              notify('Could not save quotation. Please try again.')
+            }
           }}
         />
       )}
@@ -376,9 +380,14 @@ export function Register({
           onClose={() => setEditRow(null)}
           initial={editRow}
           title="Edit quotation"
-          onSave={(payload) => {
-            dispatch({ type: 'UPDATE', payload: { id: editRow.id, patch: payload } })
-            notify('Quotation updated.')
+          onSave={async (payload) => {
+            try {
+              await dispatch({ type: 'UPDATE', payload: { id: editRow.id, patch: payload } })
+              notify('Quotation updated.')
+              setEditRow(null)
+            } catch {
+              notify('Could not update quotation. Please try again.')
+            }
           }}
         />
       )}
@@ -387,13 +396,17 @@ export function Register({
         <FollowUpLogModal
           clientLabel={followRow.clientName}
           onClose={() => setFollowRow(null)}
-          onSubmit={({ date, note }) => {
-            dispatch({
-              type: 'LOG_FOLLOW_UP',
-              payload: { id: followRow.id, date, note },
-            })
-            notify('Follow-up entry saved.')
-            setFollowRow(null)
+          onSubmit={async ({ date, note }) => {
+            try {
+              await dispatch({
+                type: 'LOG_FOLLOW_UP',
+                payload: { id: followRow.id, date, note },
+              })
+              notify('Follow-up entry saved.')
+              setFollowRow(null)
+            } catch {
+              notify('Could not save follow-up. Please try again.')
+            }
           }}
         />
       )}
@@ -401,16 +414,20 @@ export function Register({
       {deleteId != null && (
         <Modal title="Delete quotation?" onClose={() => setDeleteId(null)}>
           <p style={{ marginTop: 0, color: THEME.textMuted }}>
-            This removes the record from your local register. This cannot be undone.
+            This removes the record from the register. This cannot be undone.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
             <Button onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button
               tone="danger"
-              onClick={() => {
-                dispatch({ type: 'DELETE', payload: deleteId })
-                setDeleteId(null)
-                notify('Quotation deleted.')
+              onClick={async () => {
+                try {
+                  await dispatch({ type: 'DELETE', payload: deleteId })
+                  setDeleteId(null)
+                  notify('Quotation deleted.')
+                } catch {
+                  notify('Could not delete quotation. Please try again.')
+                }
               }}
             >
               Delete
