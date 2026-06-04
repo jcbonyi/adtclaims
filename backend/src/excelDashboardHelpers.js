@@ -1,4 +1,5 @@
 const ExcelJS = require("exceljs");
+const { renderChartPng } = require("./excelChartPng");
 
 const BRAND = {
   blue: "FF0078C8",
@@ -17,8 +18,6 @@ const thinBorder = {
   bottom: { style: "thin", color: { argb: BRAND.border } },
   right: { style: "thin", color: { argb: BRAND.border } },
 };
-
-const CHART_COLORS = ["FF0078C8", "FF8BC63A", "FF006BA3", "FF72BF44", "FFF59E0B", "FF7C3AED", "FFDB2777"];
 
 function excelColumnLetters(colIndex1Based) {
   let n = colIndex1Based;
@@ -91,73 +90,87 @@ function styleTitleBand(sheet, row, lastCol, title, subtitle, filterSummary) {
   sheet.getRow(row + 2).height = filterSummary && filterSummary.length > 80 ? 36 : 22;
 }
 
-const BAR_CHART_START_COL = 4;
-const BAR_CHART_COLS = 10;
+const CHART_IMAGE_START_COL = 3;
 
-/** In-cell bar chart (ExcelJS has no native chart API). */
-function paintBarCells(sheet, row, value, maxVal, chartType, rowIndex) {
-  const filled =
-    value <= 0 ? 0 : Math.max(1, Math.round((value / maxVal) * BAR_CHART_COLS));
-  const barColor = chartType === "pie" ? CHART_COLORS[rowIndex % CHART_COLORS.length] : BRAND.blue;
-  for (let b = 0; b < BAR_CHART_COLS; b += 1) {
-    const cell = sheet.getCell(row, BAR_CHART_START_COL + b);
-    cell.border = thinBorder;
-    if (b < filled) {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: barColor } };
-    } else if (rowIndex % 2 === 1) {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.zebra } };
-    }
-  }
+function applyCountDataBars(sheet, dataStart, dataEnd) {
+  if (dataEnd < dataStart) return;
+  sheet.addConditionalFormatting({
+    ref: `B${dataStart}:B${dataEnd}`,
+    rules: [
+      {
+        type: "dataBar",
+        cfvo: [{ type: "min" }, { type: "max" }],
+        color: { argb: BRAND.blue },
+        showValue: true,
+        gradient: false,
+      },
+    ],
+  });
 }
 
 function writeTableBlock(sheet, startRow, title, headers, dataRows, chartType) {
   let row = startRow;
-  const titleEndCol = chartType ? BAR_CHART_START_COL + BAR_CHART_COLS - 1 : 4;
-  sheet.mergeCells(row, 1, row, titleEndCol);
+  const tableCols = chartType ? 3 : 2;
+  sheet.mergeCells(row, 1, row, tableCols);
   const titleCell = sheet.getCell(row, 1);
   titleCell.value = title;
   titleCell.font = { name: "Calibri", size: 12, bold: true, color: { argb: BRAND.blueDeep } };
   row += 1;
 
-  headers.forEach((text, i) => {
+  const tableHeaders = chartType ? [...headers, "%"] : headers;
+  tableHeaders.forEach((text, i) => {
     const cell = sheet.getCell(row, i + 1);
     cell.value = text;
     styleHeaderCell(cell);
   });
-  if (chartType) {
-    sheet.mergeCells(row, BAR_CHART_START_COL, row, BAR_CHART_START_COL + BAR_CHART_COLS - 1);
-    const chartHeader = sheet.getCell(row, BAR_CHART_START_COL);
-    chartHeader.value = chartType === "pie" ? "Distribution" : "Visual";
-    styleHeaderCell(chartHeader);
-  }
   row += 1;
 
   const dataStart = row;
-  const maxVal = Math.max(...dataRows.map((r) => Number(r[1]) || 0), 1);
+  const total = dataRows.reduce((sum, r) => sum + (Number(r[1]) || 0), 0) || 1;
   dataRows.forEach((vals, ri) => {
-    vals.forEach((val, ci) => {
+    const count = Number(vals[1]) || 0;
+    const rowVals = chartType
+      ? [vals[0], count, `${Math.round((count / total) * 1000) / 10}%`]
+      : vals;
+    rowVals.forEach((val, ci) => {
       const cell = sheet.getCell(row, ci + 1);
       cell.value = val;
       cell.font = { name: "Calibri", size: 10, color: { argb: BRAND.text } };
       cell.border = thinBorder;
+      cell.alignment = { vertical: "middle" };
       if (ri % 2 === 1) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.zebra } };
       }
     });
-    if (chartType) {
-      paintBarCells(sheet, row, Number(vals[1]) || 0, maxVal, chartType, ri);
-    }
+    sheet.getRow(row).height = chartType ? 20 : 16;
     row += 1;
   });
 
-  return { nextRow: row + 1, dataStart, dataEnd: row - 1, dataCount: dataRows.length };
+  if (chartType) {
+    applyCountDataBars(sheet, dataStart, row - 1);
+  }
+
+  return { nextRow: row + 1, dataStart, dataEnd: row - 1, dataCount: dataRows.length, chartType };
+}
+
+async function embedSectionChart(workbook, sheet, block, section) {
+  if (!block.chartType || block.dataCount < 1) return;
+  const png = renderChartPng(block.chartType, section.rows, section.title);
+  if (!png) return;
+
+  const imageId = workbook.addImage({ buffer: png, extension: "png" });
+  const rowCount = block.dataEnd - block.dataStart + 1;
+  sheet.addImage(imageId, {
+    tl: { col: CHART_IMAGE_START_COL, row: block.dataStart - 1.15 },
+    ext: { width: 460, height: Math.max(110, rowCount * 26 + 48) },
+  });
 }
 
 /**
  * @param {ExcelJS.Workbook} workbook
  * @param {{ reportTitle: string; filterSummary: string; recordLabel: string; recordCount: number; kpis: {label:string;value:string|number}[]; sections: { title: string; headers: string[]; rows: (string|number)[][]; chartType?: 'pie'|'bar' }[] }} opts
  */
-function addDashboardWorksheet(workbook, opts) {
+async function addDashboardWorksheet(workbook, opts) {
   const { reportTitle, filterSummary, recordLabel, recordCount, kpis, sections } = opts;
   const sheet = workbook.addWorksheet("Dashboard", {
     properties: { tabColor: { argb: BRAND.green } },
@@ -214,24 +227,24 @@ function addDashboardWorksheet(workbook, opts) {
       section.rows,
       section.chartType
     );
-    row = block.nextRow + 1;
+    await embedSectionChart(workbook, sheet, block, section);
+    row = block.nextRow + 2;
   }
 
   sheet.getColumn(1).width = 28;
-  sheet.getColumn(2).width = 16;
-  sheet.getColumn(3).width = 4;
-  sheet.getColumn(4).width = 4;
-  for (let c = 5; c <= lastCol; c += 1) {
-    sheet.getColumn(c).width = 12;
+  sheet.getColumn(2).width = 14;
+  sheet.getColumn(3).width = 10;
+  for (let c = 4; c <= lastCol; c += 1) {
+    sheet.getColumn(c).width = 14;
   }
 
   return sheet;
 }
 
 /** Always insert Dashboard as the first tab; fall back to a minimal sheet if layout fails. */
-function safeAddDashboardWorksheet(workbook, opts) {
+async function safeAddDashboardWorksheet(workbook, opts) {
   try {
-    return addDashboardWorksheet(workbook, opts);
+    return await addDashboardWorksheet(workbook, opts);
   } catch (err) {
     console.warn("Dashboard worksheet build failed, using fallback:", err.message);
     const existing = workbook.getWorksheet("Dashboard");

@@ -282,7 +282,7 @@ export async function buildQuotationManagementWorkbookBuffer(opts) {
   addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
 
   const summary = computeQuotationExportSummary(quotations);
-  safeAddDashboardWorksheet(workbook, {
+  await safeAddDashboardWorksheet(workbook, {
     reportTitle: "ADT Insurance — Quotation dashboard",
     filterSummary,
     recordLabel: dataRowCount === 1 ? "quotation" : "quotations",

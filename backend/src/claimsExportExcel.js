@@ -230,7 +230,7 @@ async function buildClaimsManagementWorkbookBuffer(opts) {
   addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
 
   const summary = computeClaimsExportSummary(sourceRows);
-  safeAddDashboardWorksheet(workbook, {
+  await safeAddDashboardWorksheet(workbook, {
     reportTitle: "ADT Insurance — Claims dashboard",
     filterSummary,
     recordLabel: dataRowCount === 1 ? "claim" : "claims",
