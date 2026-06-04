@@ -1,24 +1,16 @@
 import ExcelJS from "exceljs";
+import { isPlacedStatus } from "../constants";
 import { daysOpen, formatDisplayDate } from "./dates";
-
-/** ADT brand palette (ARGB, no #) — aligned with quotation tracker UI. */
-const BRAND = {
-  blue: "FF1B5EA8",
-  blueDeep: "FF134785",
-  green: "FF72BF44",
-  white: "FFFFFFFF",
-  text: "FF1A2332",
-  muted: "FF64748B",
-  zebra: "FFF0F4F9",
-  border: "FFDDE4EE",
-};
-
-const thinBorder = {
-  top: { style: "thin", color: { argb: BRAND.border } },
-  left: { style: "thin", color: { argb: BRAND.border } },
-  bottom: { style: "thin", color: { argb: BRAND.border } },
-  right: { style: "thin", color: { argb: BRAND.border } },
-};
+import {
+  BRAND,
+  thinBorder,
+  excelColumnLetters,
+  formatGeneratedAt,
+  countBy,
+  topN,
+  addDashboardWorksheet,
+  styleHeaderCell,
+} from "./excelDashboardHelpers";
 
 /** 0-based column indices for KES amount columns (Premium, Sum Insured). */
 const MONEY_COL_CI = new Set([12, 13]);
@@ -42,25 +34,6 @@ const EXPORT_HEADERS = [
   "Last Follow-Up",
   "Notes",
 ];
-
-function excelColumnLetters(colIndex1Based) {
-  let n = colIndex1Based;
-  let s = "";
-  while (n > 0) {
-    const r = (n - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-function formatGeneratedAt(d = new Date()) {
-  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} at ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
 
 export function buildQuotationFilterSummary(filters) {
   const parts = [];
@@ -97,21 +70,98 @@ function quotationToRow(q) {
 }
 
 /**
- * Build a styled management-ready .xlsx buffer for the quotation register.
- * @param {{ quotations: object[]; filterSummary: string }} opts
- * @returns {Promise<ArrayBuffer>}
+ * Build dashboard summary from quotation objects in the export.
+ * @param {object[]} quotations
  */
-export async function buildQuotationManagementWorkbookBuffer(opts) {
-  const { quotations, filterSummary } = opts;
-  const dataRows = quotations.map(quotationToRow);
-  const dataRowCount = dataRows.length;
-  const headers = EXPORT_HEADERS;
+export function computeQuotationExportSummary(quotations) {
+  const total = quotations.length;
+  const placed = quotations.filter((q) => isPlacedStatus(q.status)).length;
+  const inProgress = total - placed;
+
+  let totalPremium = 0;
+  let totalSumInsured = 0;
+  const daysList = [];
+  for (const q of quotations) {
+    if (q.premium != null && !Number.isNaN(Number(q.premium))) {
+      totalPremium += Number(q.premium);
+    }
+    if (q.sumInsured != null && !Number.isNaN(Number(q.sumInsured))) {
+      totalSumInsured += Number(q.sumInsured);
+    }
+    const d = daysOpen(q.dateReceived);
+    if (typeof d === "number" && Number.isFinite(d)) daysList.push(d);
+  }
+  const avgDays =
+    daysList.length === 0
+      ? 0
+      : Number((daysList.reduce((s, d) => s + d, 0) / daysList.length).toFixed(1));
+
+  const sent = quotations.filter((q) => q.dateSentToInsurer).length;
+  const back = quotations.filter((q) => q.dateReceivedFromInsurer).length;
+
+  const statusRows = topN(countBy(quotations, (q) => q.status)).map((r) => [r.label, r.value]);
+  const insurerRows = topN(countBy(quotations, (q) => q.insurer)).map((r) => [r.label, r.value]);
+  const agentRows = topN(countBy(quotations, (q) => q.sourceAgent?.trim() || "—")).map((r) => [
+    r.label,
+    r.value,
+  ]);
+  const coverRows = topN(countBy(quotations, (q) => q.coverType)).map((r) => [r.label, r.value]);
+
+  const funnelRows = [
+    ["Received", total],
+    ["Sent to insurer", sent],
+    ["Quote back from insurer", back],
+    ["Cover placed", placed],
+  ];
+
+  return {
+    kpis: [
+      { label: "Total quotations in report", value: total },
+      { label: "Cover placed", value: placed },
+      { label: "In progress / other", value: inProgress },
+      { label: "Average days open", value: avgDays },
+      { label: "Total premium (KES)", value: totalPremium },
+      { label: "Total sum insured (KES)", value: totalSumInsured },
+    ],
+    sections: [
+      {
+        title: "Pipeline funnel",
+        headers: ["Stage", "Count"],
+        rows: funnelRows,
+        chartType: "bar",
+      },
+      {
+        title: "Quotations by status",
+        headers: ["Status", "Count"],
+        rows: statusRows,
+        chartType: "pie",
+      },
+      {
+        title: "Quotations by insurer",
+        headers: ["Insurer", "Count"],
+        rows: insurerRows,
+        chartType: "bar",
+      },
+      {
+        title: "Quotations by agent",
+        headers: ["Agent", "Count"],
+        rows: agentRows,
+        chartType: "bar",
+      },
+      {
+        title: "Quotations by cover type",
+        headers: ["Cover type", "Count"],
+        rows: coverRows,
+        chartType: "bar",
+      },
+    ],
+  };
+}
+
+function addRegisterWorksheet(workbook, opts) {
+  const { headers, dataRows, filterSummary, dataRowCount } = opts;
   const colCount = headers.length;
   const lastCol = excelColumnLetters(colCount);
-
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "ADT Quotation Tracker";
-  workbook.created = new Date();
 
   const sheet = workbook.addWorksheet("Quotation register", {
     properties: { tabColor: { argb: BRAND.blue } },
@@ -136,7 +186,7 @@ export async function buildQuotationManagementWorkbookBuffer(opts) {
 
   sheet.mergeCells(`A2:${lastCol}2`);
   const c2 = sheet.getCell("A2");
-  c2.value = `Management report · Generated ${formatGeneratedAt()} · ${dataRowCount} quotation${dataRowCount === 1 ? "" : "s"}`;
+  c2.value = `Detail data · Generated ${formatGeneratedAt()} · ${dataRowCount} quotation${dataRowCount === 1 ? "" : "s"}`;
   c2.font = { name: "Calibri", size: 11, color: { argb: BRAND.white } };
   c2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.blueDeep } };
   c2.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
@@ -154,10 +204,8 @@ export async function buildQuotationManagementWorkbookBuffer(opts) {
   headers.forEach((text, i) => {
     const cell = sheet.getCell(headerRowNum, i + 1);
     cell.value = text;
-    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: BRAND.white } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.green } };
+    styleHeaderCell(cell);
     cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    cell.border = thinBorder;
   });
   sheet.getRow(headerRowNum).height = 22;
 
@@ -211,6 +259,36 @@ export async function buildQuotationManagementWorkbookBuffer(opts) {
     }
     sheet.getColumn(c).width = Math.min(Math.max(maxLen + 2, 11), 52);
   }
+
+  return sheet;
+}
+
+/**
+ * Build a styled management-ready .xlsx buffer with Dashboard + register sheets.
+ * @param {{ quotations: object[]; filterSummary: string }} opts
+ * @returns {Promise<ArrayBuffer>}
+ */
+export async function buildQuotationManagementWorkbookBuffer(opts) {
+  const { quotations, filterSummary } = opts;
+  const dataRows = quotations.map(quotationToRow);
+  const dataRowCount = dataRows.length;
+  const headers = EXPORT_HEADERS;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "ADT Quotation Tracker";
+  workbook.created = new Date();
+
+  const summary = computeQuotationExportSummary(quotations);
+  addDashboardWorksheet(workbook, {
+    reportTitle: "ADT Insurance — Quotation dashboard",
+    filterSummary,
+    recordLabel: dataRowCount === 1 ? "quotation" : "quotations",
+    recordCount: dataRowCount,
+    kpis: summary.kpis,
+    sections: summary.sections,
+  });
+
+  addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
 
   return workbook.xlsx.writeBuffer();
 }

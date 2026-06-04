@@ -1864,6 +1864,7 @@ app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
       dataRows,
       filterSummary: buildExportFilterSummary(req.query),
       dataRowCount: rows.length,
+      sourceRows: rows,
     });
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", 'attachment; filename="ADT-claims-register.xlsx"');

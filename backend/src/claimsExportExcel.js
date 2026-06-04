@@ -1,61 +1,123 @@
 const ExcelJS = require("exceljs");
-
-/** ADT Insurance brand — primary blue + lime accent (ARGB, no #). */
-const BRAND = {
-  blue: "FF0078C8",
-  blueDeep: "FF006BA3",
-  green: "FF8BC63A",
-  white: "FFFFFFFF",
-  text: "FF0F172A",
-  muted: "FF64748B",
-  zebra: "FFF1F5F9",
-  border: "FFCBD5E1",
-};
-
-function excelColumnLetters(colIndex1Based) {
-  let n = colIndex1Based;
-  let s = "";
-  while (n > 0) {
-    const r = (n - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-function formatGeneratedAt(d = new Date()) {
-  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} at ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-const thinBorder = {
-  top: { style: "thin", color: { argb: BRAND.border } },
-  left: { style: "thin", color: { argb: BRAND.border } },
-  bottom: { style: "thin", color: { argb: BRAND.border } },
-  right: { style: "thin", color: { argb: BRAND.border } },
-};
+const { CLOSED_STATUS_LIST } = require("./claimStatuses");
+const {
+  BRAND,
+  thinBorder,
+  excelColumnLetters,
+  formatGeneratedAt,
+  countBy,
+  topN,
+  addDashboardWorksheet,
+  styleHeaderCell,
+} = require("./excelDashboardHelpers");
 
 /** 0-based column indices for KES amount columns (Vehicle Value, Repair Estimate). */
 const MONEY_COL_CI = new Set([13, 14]);
 
+const CLOSED_SET = new Set(CLOSED_STATUS_LIST);
+
+function computeDaysOpen(reportedToBrokerDate, closureDate) {
+  if (!reportedToBrokerDate) return 0;
+  const start = new Date(reportedToBrokerDate);
+  const end = closureDate ? new Date(closureDate) : new Date();
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  const startUtc = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const endUtc = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  const days = Math.floor((endUtc - startUtc) / (1000 * 60 * 60 * 24));
+  return days < 0 ? 0 : days;
+}
+
+function calcAgingBucket(daysOpen) {
+  if (daysOpen <= 7) return "0-7";
+  if (daysOpen <= 14) return "8-14";
+  if (daysOpen <= 30) return "15-30";
+  return "30+";
+}
+
 /**
- * Build a styled management-ready .xlsx buffer.
- * @param {{ headers: string[]; dataRows: (string|number|null|undefined)[][]; filterSummary: string; dataRowCount: number }} opts
+ * Build dashboard summary from raw claim rows (DB shape).
+ * @param {object[]} rows
  */
-async function buildClaimsManagementWorkbookBuffer(opts) {
+function computeClaimsExportSummary(rows) {
+  const withDays = rows.map((r) => ({
+    ...r,
+    days_open: computeDaysOpen(r.reported_to_broker_date, r.closure_date),
+  }));
+  const total = withDays.length;
+  const closed = withDays.filter((c) => CLOSED_SET.has(c.claim_status)).length;
+  const open = total - closed;
+  const avgDays =
+    total === 0
+      ? 0
+      : Number((withDays.reduce((s, c) => s + c.days_open, 0) / total).toFixed(1));
+  const over30 = withDays.filter((c) => !CLOSED_SET.has(c.claim_status) && c.days_open >= 31).length;
+
+  const statusRows = topN(countBy(withDays, (c) => c.claim_status)).map((r) => [r.label, r.value]);
+  const insurerRows = topN(countBy(withDays, (c) => c.insurer)).map((r) => [r.label, r.value]);
+  const typeRows = topN(countBy(withDays, (c) => c.claim_type)).map((r) => [r.label, r.value]);
+
+  const agingOrder = ["0-7", "8-14", "15-30", "30+"];
+  const agingMap = new Map(agingOrder.map((b) => [b, 0]));
+  for (const c of withDays) {
+    const b = calcAgingBucket(c.days_open);
+    agingMap.set(b, (agingMap.get(b) || 0) + 1);
+  }
+  const agingRows = agingOrder.map((b) => [b + " days", agingMap.get(b) || 0]);
+
+  let totalVehicle = 0;
+  let totalRepair = 0;
+  for (const c of withDays) {
+    if (c.vehicle_value != null && !Number.isNaN(Number(c.vehicle_value))) {
+      totalVehicle += Number(c.vehicle_value);
+    }
+    if (c.repair_estimate != null && !Number.isNaN(Number(c.repair_estimate))) {
+      totalRepair += Number(c.repair_estimate);
+    }
+  }
+
+  return {
+    kpis: [
+      { label: "Total claims in report", value: total },
+      { label: "Open claims", value: open },
+      { label: "Closed claims", value: closed },
+      { label: "Average days open", value: avgDays },
+      { label: "Open claims over 30 days", value: over30 },
+      { label: "Total vehicle value (KES)", value: totalVehicle },
+      { label: "Total repair estimate (KES)", value: totalRepair },
+    ],
+    sections: [
+      {
+        title: "Claims by status",
+        headers: ["Status", "Count"],
+        rows: statusRows,
+        chartType: "pie",
+      },
+      {
+        title: "Claims by insurer",
+        headers: ["Insurer", "Count"],
+        rows: insurerRows,
+        chartType: "bar",
+      },
+      {
+        title: "Claims by type",
+        headers: ["Claim type", "Count"],
+        rows: typeRows,
+        chartType: "bar",
+      },
+      {
+        title: "Aging analysis",
+        headers: ["Aging bucket", "Count"],
+        rows: agingRows,
+        chartType: "bar",
+      },
+    ],
+  };
+}
+
+function addRegisterWorksheet(workbook, opts) {
   const { headers, dataRows, filterSummary, dataRowCount } = opts;
   const colCount = headers.length;
-  if (colCount === 0) {
-    throw new Error("Export requires at least one column");
-  }
   const lastCol = excelColumnLetters(colCount);
-
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "ADT Claims Tracker";
-  workbook.created = new Date();
 
   const sheet = workbook.addWorksheet("Claims register", {
     properties: { tabColor: { argb: BRAND.blue } },
@@ -80,7 +142,7 @@ async function buildClaimsManagementWorkbookBuffer(opts) {
 
   sheet.mergeCells(`A2:${lastCol}2`);
   const c2 = sheet.getCell("A2");
-  c2.value = `Management report · Generated ${formatGeneratedAt()} · ${dataRowCount} claim${dataRowCount === 1 ? "" : "s"}`;
+  c2.value = `Detail data · Generated ${formatGeneratedAt()} · ${dataRowCount} claim${dataRowCount === 1 ? "" : "s"}`;
   c2.font = { name: "Calibri", size: 11, color: { argb: BRAND.white } };
   c2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.blueDeep } };
   c2.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
@@ -98,14 +160,11 @@ async function buildClaimsManagementWorkbookBuffer(opts) {
   headers.forEach((text, i) => {
     const cell = sheet.getCell(headerRowNum, i + 1);
     cell.value = text;
-    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: BRAND.white } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.green } };
-    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    cell.border = thinBorder;
+    styleHeaderCell(cell);
   });
   sheet.getRow(headerRowNum).height = 22;
 
-  let dataStart = headerRowNum + 1;
+  const dataStart = headerRowNum + 1;
   dataRows.forEach((rowVals, ri) => {
     const excelRow = sheet.getRow(dataStart + ri);
     excelRow.height = 16;
@@ -150,10 +209,40 @@ async function buildClaimsManagementWorkbookBuffer(opts) {
     sheet.getColumn(c).width = Math.min(Math.max(maxLen + 2, 11), 52);
   }
 
+  return sheet;
+}
+
+/**
+ * Build a styled management-ready .xlsx buffer with Dashboard + register sheets.
+ * @param {{ headers: string[]; dataRows: (string|number|null|undefined)[][]; filterSummary: string; dataRowCount: number; sourceRows?: object[] }} opts
+ */
+async function buildClaimsManagementWorkbookBuffer(opts) {
+  const { headers, dataRows, filterSummary, dataRowCount, sourceRows = [] } = opts;
+  if (!headers.length) {
+    throw new Error("Export requires at least one column");
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "ADT Claims Tracker";
+  workbook.created = new Date();
+
+  const summary = computeClaimsExportSummary(sourceRows);
+  addDashboardWorksheet(workbook, {
+    reportTitle: "ADT Insurance — Claims dashboard",
+    filterSummary,
+    recordLabel: dataRowCount === 1 ? "claim" : "claims",
+    recordCount: dataRowCount,
+    kpis: summary.kpis,
+    sections: summary.sections,
+  });
+
+  addRegisterWorksheet(workbook, { headers, dataRows, filterSummary, dataRowCount });
+
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);
 }
 
 module.exports = {
   buildClaimsManagementWorkbookBuffer,
+  computeClaimsExportSummary,
 };
