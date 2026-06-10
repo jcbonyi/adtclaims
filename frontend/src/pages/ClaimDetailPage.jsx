@@ -6,6 +6,8 @@ import PageHeader from "../components/PageHeader";
 import StatusSelectOptions from "../components/StatusSelectOptions";
 import { useToast } from "../context/ToastContext";
 import { formatCurrency, formatDate, toDateInputString } from "../utils/format";
+import PendingDocumentsChecklist from "../components/PendingDocumentsChecklist";
+import { normalizeReceivedKeys } from "../utils/pendingDocumentsConfig";
 
 const blankClaim = {
   insurer: "",
@@ -24,6 +26,8 @@ const blankClaim = {
   vehicleValue: "",
   repairEstimate: "",
   garage: "",
+  nonMotorCategory: "",
+  pendingDocsReceived: [],
 };
 
 function claimStateFromApi(c) {
@@ -44,7 +48,13 @@ function claimStateFromApi(c) {
     vehicleValue: c.vehicleValue ?? "",
     repairEstimate: c.repairEstimate ?? "",
     garage: c.garage || "",
+    nonMotorCategory: c.nonMotorCategory || "",
+    pendingDocsReceived: Array.isArray(c.pendingDocsReceived) ? c.pendingDocsReceived : [],
   };
+}
+
+function showPendingDocsChecklist(claim) {
+  return claim.claimStatus === "Pending Documents";
 }
 
 export default function ClaimDetailPage({ mode }) {
@@ -57,7 +67,10 @@ export default function ClaimDetailPage({ mode }) {
   const [history, setHistory] = useState([]);
   const [newRemark, setNewRemark] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingDocsMeta, setPendingDocsMeta] = useState(null);
   const { notify } = useToast();
+  const pendingChecklists = pendingDocsMeta?.checklists;
+  const nonMotorCategories = pendingDocsMeta?.nonMotorCategories || [];
 
   const title = useMemo(
     () => (mode === "create" ? "Create New Claim" : `Claim #${id}`),
@@ -71,6 +84,16 @@ export default function ClaimDetailPage({ mode }) {
     setRemarks(res.data.remarks);
     setHistory(res.data.statusHistory);
   }
+
+  useEffect(() => {
+    let ignore = false;
+    client.get("/meta").then((res) => {
+      if (!ignore) setPendingDocsMeta(res.data.pendingDocuments);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (mode !== "edit") return;
@@ -93,8 +116,18 @@ export default function ClaimDetailPage({ mode }) {
     if (!canEdit) return;
     setSaving(true);
     try {
+      const nonMotorCategory =
+        claim.claimType === "NON-MOTOR" ? claim.nonMotorCategory || null : null;
+      const pendingDocsReceived = normalizeReceivedKeys(
+        pendingChecklists,
+        claim.claimType,
+        nonMotorCategory,
+        claim.pendingDocsReceived
+      );
       const payload = {
         ...claim,
+        nonMotorCategory,
+        pendingDocsReceived,
         vehicleValue: claim.vehicleValue === "" ? null : Number(claim.vehicleValue),
         repairEstimate: claim.repairEstimate === "" ? null : Number(claim.repairEstimate),
       };
@@ -170,13 +203,60 @@ export default function ClaimDetailPage({ mode }) {
           <select
             className={fieldClass}
             value={claim.claimType}
-            onChange={(e) => setClaim((prev) => ({ ...prev, claimType: e.target.value }))}
+            onChange={(e) => {
+              const claimType = e.target.value;
+              setClaim((prev) => {
+                const nonMotorCategory = claimType === "NON-MOTOR" ? prev.nonMotorCategory : "";
+                return {
+                  ...prev,
+                  claimType,
+                  nonMotorCategory,
+                  pendingDocsReceived: normalizeReceivedKeys(
+                    pendingChecklists,
+                    claimType,
+                    nonMotorCategory || null,
+                    prev.pendingDocsReceived
+                  ),
+                };
+              });
+            }}
             disabled={!canEdit}
           >
             <option value="MOTOR">MOTOR</option>
             <option value="NON-MOTOR">NON-MOTOR</option>
           </select>
         </label>
+        {claim.claimType === "NON-MOTOR" ? (
+          <label>
+            <span className={labelClass}>Non-Motor Category</span>
+            <select
+              className={fieldClass}
+              value={claim.nonMotorCategory}
+              onChange={(e) => {
+                const nonMotorCategory = e.target.value;
+                setClaim((prev) => ({
+                  ...prev,
+                  nonMotorCategory,
+                  pendingDocsReceived: normalizeReceivedKeys(
+                    pendingChecklists,
+                    prev.claimType,
+                    nonMotorCategory || null,
+                    prev.pendingDocsReceived
+                  ),
+                }));
+              }}
+              required={showPendingDocsChecklist(claim)}
+              disabled={!canEdit}
+            >
+              <option value="">Select category…</option>
+              {nonMotorCategories.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
           <span className={labelClass}>Cover Type</span>
           <input
@@ -229,6 +309,24 @@ export default function ClaimDetailPage({ mode }) {
               disabled={!canEdit}
             />
           </label>
+        ) : null}
+
+        {showPendingDocsChecklist(claim) ? (
+          <div className="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+              Pending documents checklist
+            </p>
+            <PendingDocumentsChecklist
+              checklists={pendingChecklists}
+              claimType={claim.claimType}
+              nonMotorCategory={claim.nonMotorCategory || null}
+              receivedKeys={claim.pendingDocsReceived}
+              disabled={!canEdit}
+              onChange={(pendingDocsReceived) =>
+                setClaim((prev) => ({ ...prev, pendingDocsReceived }))
+              }
+            />
+          </div>
         ) : null}
 
         <p className="md:col-span-2 mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">Key dates</p>

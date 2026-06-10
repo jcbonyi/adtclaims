@@ -13,6 +13,11 @@ const multer = require("multer");
 const xlsx = require("xlsx");
 const { buildClaimsManagementWorkbookBuffer } = require("./claimsExportExcel");
 const {
+  getPendingDocumentsMeta,
+  normalizeReceivedKeys,
+  formatOutstandingForExport,
+} = require("./pendingDocumentsConfig");
+const {
   ensureQuotationsTable,
   seedQuotationsIfEmpty,
   registerQuotationRoutes,
@@ -88,6 +93,20 @@ const claimInputSchema = z.object({
   vehicleValue: z.number().nullable().optional(),
   repairEstimate: z.number().nullable().optional(),
   garage: z.string().nullable().optional(),
+  nonMotorCategory: z.enum(["WIBA", "OTHER"]).nullable().optional(),
+  pendingDocsReceived: z.array(z.string()).optional().default([]),
+}).superRefine((data, ctx) => {
+  if (
+    data.claimType === "NON-MOTOR" &&
+    data.claimStatus === "Pending Documents" &&
+    !data.nonMotorCategory
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Non-motor category is required when status is Pending Documents",
+      path: ["nonMotorCategory"],
+    });
+  }
 });
 
 app.use(cors());
@@ -113,6 +132,15 @@ function toSnakeCaseClaim(payload) {
     vehicle_value: payload.vehicleValue ?? null,
     repair_estimate: payload.repairEstimate ?? null,
     garage: payload.garage || null,
+    non_motor_category:
+      payload.claimType === "NON-MOTOR" ? payload.nonMotorCategory || null : null,
+    pending_docs_received: JSON.stringify(
+      normalizeReceivedKeys(
+        payload.claimType,
+        payload.claimType === "NON-MOTOR" ? payload.nonMotorCategory : null,
+        payload.pendingDocsReceived || []
+      )
+    ),
   };
 }
 
@@ -258,6 +286,16 @@ async function ensureDb() {
   `);
 
   await pool.query(`
+    ALTER TABLE claims
+      ADD COLUMN IF NOT EXISTS non_motor_category TEXT NULL;
+  `);
+
+  await pool.query(`
+    ALTER TABLE claims
+      ADD COLUMN IF NOT EXISTS pending_docs_received JSONB NOT NULL DEFAULT '[]'::jsonb;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS user_audit_logs (
       id SERIAL PRIMARY KEY,
       target_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -336,6 +374,12 @@ function mapClaim(row) {
     vehicleValue: row.vehicle_value ? Number(row.vehicle_value) : null,
     repairEstimate: row.repair_estimate ? Number(row.repair_estimate) : null,
     garage: row.garage,
+    nonMotorCategory: row.non_motor_category || null,
+    pendingDocsReceived: normalizeReceivedKeys(
+      row.claim_type,
+      row.non_motor_category,
+      row.pending_docs_received
+    ),
     closureDate: row.closure_date,
     daysOpen,
     agingBucket: calcAgingBucket(daysOpen),
@@ -507,6 +551,12 @@ async function maybeLoadInMemorySnapshot() {
         ],
         snapshotUsers
       );
+      const snapshotClaims = (snapshot.claims || []).map((row) => ({
+        ...row,
+        non_motor_category: row.non_motor_category ?? null,
+        pending_docs_received: row.pending_docs_received ?? [],
+      }));
+
       await restoreSnapshotRows(
         "claims",
         [
@@ -528,11 +578,13 @@ async function maybeLoadInMemorySnapshot() {
           "repair_estimate",
           "garage",
           "closure_date",
+          "non_motor_category",
+          "pending_docs_received",
           "created_by",
           "created_at",
           "updated_at",
         ],
-        snapshot.claims || []
+        snapshotClaims
       );
       await restoreSnapshotRows(
         "claim_remarks",
@@ -1297,6 +1349,7 @@ app.get("/api/meta", authRequired, async (_, res) => {
       closedStatuses: [...CLOSED_STATUS_LIST],
       roles: ROLES,
       insurers,
+      pendingDocuments: getPendingDocumentsMeta(),
     });
   } catch (error) {
     console.error("GET /api/meta failed:", error.message);
@@ -1509,9 +1562,11 @@ async function createOrUpdateClaim(req, res, mode) {
             vehicle_value = $14,
             repair_estimate = $15,
             garage = $16,
+            non_motor_category = $17,
+            pending_docs_received = $18::jsonb,
             closure_date = ${closureDateSql},
             updated_at = NOW()
-        WHERE id = $17
+        WHERE id = $19
       `,
         [
           c.insurer,
@@ -1530,6 +1585,8 @@ async function createOrUpdateClaim(req, res, mode) {
           c.vehicle_value,
           c.repair_estimate,
           c.garage,
+          c.non_motor_category,
+          c.pending_docs_received,
           claimId,
         ]
       );
@@ -1551,6 +1608,8 @@ async function createOrUpdateClaim(req, res, mode) {
         c.vehicle_value,
         c.repair_estimate,
         c.garage,
+        c.non_motor_category,
+        c.pending_docs_received,
         CLOSED_STATUSES.has(c.claim_status) ? new Date().toISOString().slice(0, 10) : null,
         req.user.id,
       ];
@@ -1565,9 +1624,10 @@ async function createOrUpdateClaim(req, res, mode) {
           accident_date, reported_to_broker_date, reported_to_insurer_date,
           assessed_date, claim_status, claim_status_other, date_ra_issued,
           date_vehicle_released, vehicle_value, repair_estimate, garage,
+          non_motor_category, pending_docs_received,
           closure_date, created_by
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
         RETURNING id
       `,
           [cid, ...claimValues]
@@ -1580,9 +1640,10 @@ async function createOrUpdateClaim(req, res, mode) {
           accident_date, reported_to_broker_date, reported_to_insurer_date,
           assessed_date, claim_status, claim_status_other, date_ra_issued,
           date_vehicle_released, vehicle_value, repair_estimate, garage,
+          non_motor_category, pending_docs_received,
           closure_date, created_by
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
         RETURNING id
       `,
           claimValues
@@ -1847,6 +1908,7 @@ app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
       "Assessed Date",
       "Status",
       "Status Other",
+      "Pending Docs",
       "RA Date",
       "Released Date",
       "Vehicle Value (KES)",
@@ -1868,6 +1930,12 @@ app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
       formatDateForCsv(row.assessed_date),
       row.claim_status,
       row.claim_status_other,
+      formatOutstandingForExport(
+        row.claim_type,
+        row.non_motor_category,
+        row.pending_docs_received,
+        row.claim_status
+      ),
       formatDateForCsv(row.date_ra_issued),
       formatDateForCsv(row.date_vehicle_released),
       row.vehicle_value,
