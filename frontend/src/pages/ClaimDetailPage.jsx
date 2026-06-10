@@ -28,6 +28,7 @@ const blankClaim = {
   garage: "",
   nonMotorCategory: "",
   pendingDocsReceived: [],
+  pendingDocsOther: "",
 };
 
 function claimStateFromApi(c) {
@@ -50,6 +51,7 @@ function claimStateFromApi(c) {
     garage: c.garage || "",
     nonMotorCategory: c.nonMotorCategory || "",
     pendingDocsReceived: Array.isArray(c.pendingDocsReceived) ? c.pendingDocsReceived : [],
+    pendingDocsOther: c.pendingDocsOther || "",
   };
 }
 
@@ -321,9 +323,13 @@ export default function ClaimDetailPage({ mode }) {
               claimType={claim.claimType}
               nonMotorCategory={claim.nonMotorCategory || null}
               receivedKeys={claim.pendingDocsReceived}
+              otherText={claim.pendingDocsOther}
               disabled={!canEdit}
               onChange={(pendingDocsReceived) =>
                 setClaim((prev) => ({ ...prev, pendingDocsReceived }))
+              }
+              onOtherTextChange={(pendingDocsOther) =>
+                setClaim((prev) => ({ ...prev, pendingDocsOther }))
               }
             />
           </div>

@@ -1,5 +1,6 @@
 import {
   getChecklistItems,
+  getItemOutstandingLabel,
   normalizeReceivedKeys,
   resolveChecklistKey,
 } from "../utils/pendingDocumentsConfig";
@@ -9,7 +10,9 @@ export default function PendingDocumentsChecklist({
   claimType,
   nonMotorCategory,
   receivedKeys,
+  otherText,
   onChange,
+  onOtherTextChange,
   disabled,
 }) {
   const checklistKey = resolveChecklistKey(claimType, nonMotorCategory);
@@ -70,12 +73,37 @@ export default function PendingDocumentsChecklist({
                 disabled={disabled}
                 onChange={(e) => toggle(item.key, e.target.checked)}
               />
-              <label
-                htmlFor={`pdoc-${item.key}`}
-                className={`flex-1 cursor-pointer ${received ? "text-slate-600 line-through" : "text-slate-900"}`}
-              >
-                {item.label}
-              </label>
+              {item.freeText ? (
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <label
+                    htmlFor={`pdoc-other-${item.key}`}
+                    className={`font-medium ${received ? "text-slate-600 line-through" : "text-slate-900"}`}
+                  >
+                    {item.label}
+                  </label>
+                  <input
+                    id={`pdoc-other-${item.key}`}
+                    type="text"
+                    className="adt-input"
+                    placeholder="Describe any other required document"
+                    value={otherText || ""}
+                    disabled={disabled || received}
+                    onChange={(e) => onOtherTextChange?.(e.target.value)}
+                  />
+                  {!received && otherText?.trim() ? (
+                    <p className="text-xs text-slate-500">
+                      Outstanding: {getItemOutstandingLabel(item, otherText)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <label
+                  htmlFor={`pdoc-${item.key}`}
+                  className={`flex-1 cursor-pointer ${received ? "text-slate-600 line-through" : "text-slate-900"}`}
+                >
+                  {item.label}
+                </label>
+              )}
             </li>
           );
         })}

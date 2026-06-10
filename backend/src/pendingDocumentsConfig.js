@@ -6,16 +6,13 @@ const PENDING_DOCUMENT_CHECKLISTS = {
   MOTOR: {
     label: "Motor claim — required documents",
     items: [
-      { key: "adt_claim_form", label: "ADT claim notification form (signed)" },
-      { key: "policy_schedule", label: "Motor policy schedule / certificate of insurance" },
+      { key: "signed_claim_form", label: "Signed Claim Form" },
       { key: "logbook", label: "Copy of vehicle logbook" },
       { key: "driving_licence", label: "Copy of driver's valid driving licence" },
-      { key: "insured_id", label: "Copy of insured's national ID / passport" },
+      { key: "driver_id", label: "Copy of Driver's national ID / passport" },
       { key: "police_abstract", label: "Police abstract (ATI)" },
       { key: "accident_photos", label: "Accident photographs (all angles)" },
-      { key: "garage_estimate", label: "Garage repair quotation / pro-forma invoice" },
-      { key: "ntsa_report", label: "NTSA inspection report (if applicable)" },
-      { key: "authority_to_repair", label: "Authority to repair / release letter" },
+      { key: "any_other", label: "Any Other", freeText: true },
     ],
   },
   WIBA: {
@@ -89,17 +86,37 @@ function normalizeReceivedKeys(claimType, nonMotorCategory, receivedKeys) {
   return parseReceivedKeys(receivedKeys).filter((k) => valid.has(k));
 }
 
-function getOutstandingDocuments(claimType, nonMotorCategory, receivedKeys) {
+function getItemOutstandingLabel(item, pendingDocsOther) {
+  if (item.freeText) {
+    const text = String(pendingDocsOther || "").trim();
+    return text || item.label;
+  }
+  return item.label;
+}
+
+function getOutstandingDocuments(claimType, nonMotorCategory, receivedKeys, pendingDocsOther = "") {
   const received = new Set(normalizeReceivedKeys(claimType, nonMotorCategory, receivedKeys));
   return getChecklistItems(claimType, nonMotorCategory)
     .filter((item) => !received.has(item.key))
-    .map((item) => item.label);
+    .map((item) => getItemOutstandingLabel(item, pendingDocsOther));
 }
 
-function formatOutstandingForExport(claimType, nonMotorCategory, receivedKeys, claimStatus) {
+function formatOutstandingForExport(
+  claimType,
+  nonMotorCategory,
+  receivedKeys,
+  claimStatus,
+  pendingDocsOther = ""
+) {
   if (claimStatus !== "Pending Documents") return "";
-  const outstanding = getOutstandingDocuments(claimType, nonMotorCategory, receivedKeys);
-  return outstanding.length ? outstanding.join("; ") : "All documents received";
+  const outstanding = getOutstandingDocuments(
+    claimType,
+    nonMotorCategory,
+    receivedKeys,
+    pendingDocsOther
+  );
+  if (!outstanding.length) return "All documents received";
+  return outstanding.map((label, index) => `${index + 1}. ${label}`).join("\n");
 }
 
 function getPendingDocumentsMeta() {
@@ -117,6 +134,7 @@ module.exports = {
   getChecklistItems,
   parseReceivedKeys,
   normalizeReceivedKeys,
+  getItemOutstandingLabel,
   getOutstandingDocuments,
   formatOutstandingForExport,
   getPendingDocumentsMeta,

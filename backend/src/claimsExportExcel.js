@@ -165,15 +165,17 @@ function addRegisterWorksheet(workbook, opts) {
   });
   sheet.getRow(headerRowNum).height = 22;
 
+  const pendingDocsColIndex = headers.indexOf("Pending Docs");
   const dataStart = headerRowNum + 1;
   dataRows.forEach((rowVals, ri) => {
     const excelRow = sheet.getRow(dataStart + ri);
-    excelRow.height = 16;
+    let rowHeight = 16;
     rowVals.forEach((val, ci) => {
       const cell = excelRow.getCell(ci + 1);
+      const isPendingDocsCol = ci === pendingDocsColIndex;
       cell.font = { name: "Calibri", size: 10, color: { argb: BRAND.text } };
       cell.border = thinBorder;
-      cell.alignment = { vertical: "top", wrapText: true };
+      cell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       if (ri % 2 === 1) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.zebra } };
@@ -194,20 +196,36 @@ function addRegisterWorksheet(workbook, opts) {
         return;
       }
       cell.value = val === null || val === undefined ? "" : String(val);
+
+      if (isPendingDocsCol && typeof val === "string" && val.includes("\n")) {
+        const lineCount = val.split("\n").length;
+        rowHeight = Math.max(rowHeight, Math.min(lineCount * 15 + 6, 180));
+      }
     });
+    excelRow.height = rowHeight;
   });
 
   for (let c = 1; c <= colCount; c += 1) {
     let maxLen = String(headers[c - 1] ?? "").length;
     for (const dr of dataRows) {
       const v = dr[c - 1];
-      const len =
-        v !== null && v !== undefined && typeof v === "number"
-          ? String(Math.round(v)).length + 3
-          : String(v ?? "").length;
-      if (len > maxLen) maxLen = len;
+      if (v !== null && v !== undefined && typeof v === "number") {
+        maxLen = Math.max(maxLen, String(Math.round(v)).length + 3);
+        continue;
+      }
+      const text = String(v ?? "");
+      if (headers[c - 1] === "Pending Docs" && text.includes("\n")) {
+        for (const line of text.split("\n")) {
+          maxLen = Math.max(maxLen, line.length);
+        }
+      } else {
+        maxLen = Math.max(maxLen, text.length);
+      }
     }
-    sheet.getColumn(c).width = Math.min(Math.max(maxLen + 2, 11), 52);
+    const headerName = headers[c - 1];
+    const minWidth = headerName === "Pending Docs" ? 38 : 11;
+    const maxWidth = headerName === "Pending Docs" ? 56 : 52;
+    sheet.getColumn(c).width = Math.min(Math.max(maxLen + 2, minWidth), maxWidth);
   }
 
   return sheet;

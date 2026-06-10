@@ -18,9 +18,23 @@ export function normalizeReceivedKeys(checklists, claimType, nonMotorCategory, r
   return keys.filter((k) => valid.has(k));
 }
 
-export function getOutstandingLabels(checklists, claimType, nonMotorCategory, receivedKeys) {
+export function getItemOutstandingLabel(item, otherText) {
+  if (item.freeText) {
+    const text = String(otherText || "").trim();
+    return text || item.label;
+  }
+  return item.label;
+}
+
+export function getOutstandingLabels(
+  checklists,
+  claimType,
+  nonMotorCategory,
+  receivedKeys,
+  otherText = ""
+) {
   const received = new Set(normalizeReceivedKeys(checklists, claimType, nonMotorCategory, receivedKeys));
   return getChecklistItems(checklists, claimType, nonMotorCategory)
     .filter((item) => !received.has(item.key))
-    .map((item) => item.label);
+    .map((item) => getItemOutstandingLabel(item, otherText));
 }
