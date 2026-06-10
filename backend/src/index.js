@@ -551,11 +551,19 @@ async function maybeLoadInMemorySnapshot() {
         ],
         snapshotUsers
       );
-      const snapshotClaims = (snapshot.claims || []).map((row) => ({
-        ...row,
-        non_motor_category: row.non_motor_category ?? null,
-        pending_docs_received: row.pending_docs_received ?? [],
-      }));
+      const snapshotClaims = (snapshot.claims || []).map((row) => {
+        const pendingDocs = row.pending_docs_received;
+        let pendingDocsJson = "[]";
+        if (pendingDocs != null) {
+          pendingDocsJson =
+            typeof pendingDocs === "string" ? pendingDocs : JSON.stringify(pendingDocs);
+        }
+        return {
+          ...row,
+          non_motor_category: row.non_motor_category ?? null,
+          pending_docs_received: pendingDocsJson,
+        };
+      });
 
       await restoreSnapshotRows(
         "claims",
