@@ -23,14 +23,14 @@ const PENDING_DOCUMENT_CHECKLISTS = {
     items: [
       { key: "wiba_claim_form", label: "WIBA claim notification form (signed)" },
       { key: "wiba_policy", label: "WIBA policy schedule / endorsement" },
-      { key: "p3_medical", label: "P3 / medical assessment form (DOSH)" },
-      { key: "employer_accident_report", label: "Employer report of accident (DOSH)" },
+      { key: "p3_medical", label: "P3 / medical assessment form (DOSH) (Dosh 1)" },
+      { key: "employer_accident_report", label: "Employer report of accident (DOSH) (Dosh 2)" },
+      { key: "dosh_award", label: "DOSH compensation assessment / award (if issued) (Dosh 4)" },
       { key: "employee_id", label: "Employee national ID / passport copy" },
       { key: "payslips", label: "Payslips — last 3 months pre-injury" },
       { key: "nhif_nssf", label: "NHIF / NSSF contribution records" },
       { key: "medical_bills", label: "Hospital bills and medical receipts" },
       { key: "disability_assessment", label: "Disability assessment report (if applicable)" },
-      { key: "dosh_award", label: "DOSH compensation assessment / award (if issued)" },
     ],
   },
   OTHER_NON_MOTOR: {
