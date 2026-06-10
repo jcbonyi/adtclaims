@@ -6,14 +6,32 @@ export function resolveChecklistKey(claimType, nonMotorCategory) {
   return "OTHER_NON_MOTOR";
 }
 
-export function getChecklistItems(checklists, claimType, nonMotorCategory) {
-  if (!checklists) return [];
-  const key = resolveChecklistKey(claimType, nonMotorCategory);
-  return checklists[key]?.items || [];
+function shouldIncludeFatalWibaItems(claimType, nonMotorCategory, wibaFatalInjury) {
+  return claimType === "NON-MOTOR" && nonMotorCategory === "WIBA" && !!wibaFatalInjury;
 }
 
-export function normalizeReceivedKeys(checklists, claimType, nonMotorCategory, receivedKeys) {
-  const valid = new Set(getChecklistItems(checklists, claimType, nonMotorCategory).map((i) => i.key));
+export function getChecklistItems(checklists, claimType, nonMotorCategory, wibaFatalInjury = false) {
+  if (!checklists) return [];
+  const key = resolveChecklistKey(claimType, nonMotorCategory);
+  const checklist = checklists[key];
+  if (!checklist) return [];
+  const items = [...(checklist.items || [])];
+  if (shouldIncludeFatalWibaItems(claimType, nonMotorCategory, wibaFatalInjury)) {
+    items.push(...(checklist.fatalItems || []));
+  }
+  return items;
+}
+
+export function normalizeReceivedKeys(
+  checklists,
+  claimType,
+  nonMotorCategory,
+  receivedKeys,
+  wibaFatalInjury = false
+) {
+  const valid = new Set(
+    getChecklistItems(checklists, claimType, nonMotorCategory, wibaFatalInjury).map((i) => i.key)
+  );
   const keys = Array.isArray(receivedKeys) ? receivedKeys : [];
   return keys.filter((k) => valid.has(k));
 }
@@ -31,10 +49,13 @@ export function getOutstandingLabels(
   claimType,
   nonMotorCategory,
   receivedKeys,
-  otherText = ""
+  otherText = "",
+  wibaFatalInjury = false
 ) {
-  const received = new Set(normalizeReceivedKeys(checklists, claimType, nonMotorCategory, receivedKeys));
-  return getChecklistItems(checklists, claimType, nonMotorCategory)
+  const received = new Set(
+    normalizeReceivedKeys(checklists, claimType, nonMotorCategory, receivedKeys, wibaFatalInjury)
+  );
+  return getChecklistItems(checklists, claimType, nonMotorCategory, wibaFatalInjury)
     .filter((item) => !received.has(item.key))
     .map((item) => getItemOutstandingLabel(item, otherText));
 }

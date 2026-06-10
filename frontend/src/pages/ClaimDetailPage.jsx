@@ -29,6 +29,7 @@ const blankClaim = {
   nonMotorCategory: "",
   pendingDocsReceived: [],
   pendingDocsOther: "",
+  wibaFatalInjury: false,
 };
 
 function claimStateFromApi(c) {
@@ -52,6 +53,7 @@ function claimStateFromApi(c) {
     nonMotorCategory: c.nonMotorCategory || "",
     pendingDocsReceived: Array.isArray(c.pendingDocsReceived) ? c.pendingDocsReceived : [],
     pendingDocsOther: c.pendingDocsOther || "",
+    wibaFatalInjury: !!c.wibaFatalInjury,
   };
 }
 
@@ -120,15 +122,21 @@ export default function ClaimDetailPage({ mode }) {
     try {
       const nonMotorCategory =
         claim.claimType === "NON-MOTOR" ? claim.nonMotorCategory || null : null;
+      const wibaFatalInjury =
+        claim.claimType === "NON-MOTOR" && nonMotorCategory === "WIBA"
+          ? !!claim.wibaFatalInjury
+          : false;
       const pendingDocsReceived = normalizeReceivedKeys(
         pendingChecklists,
         claim.claimType,
         nonMotorCategory,
-        claim.pendingDocsReceived
+        claim.pendingDocsReceived,
+        wibaFatalInjury
       );
       const payload = {
         ...claim,
         nonMotorCategory,
+        wibaFatalInjury,
         pendingDocsReceived,
         vehicleValue: claim.vehicleValue === "" ? null : Number(claim.vehicleValue),
         repairEstimate: claim.repairEstimate === "" ? null : Number(claim.repairEstimate),
@@ -213,11 +221,15 @@ export default function ClaimDetailPage({ mode }) {
                   ...prev,
                   claimType,
                   nonMotorCategory,
+                  wibaFatalInjury: claimType === "NON-MOTOR" ? prev.wibaFatalInjury : false,
                   pendingDocsReceived: normalizeReceivedKeys(
                     pendingChecklists,
                     claimType,
                     nonMotorCategory || null,
-                    prev.pendingDocsReceived
+                    prev.pendingDocsReceived,
+                    claimType === "NON-MOTOR" && nonMotorCategory === "WIBA"
+                      ? prev.wibaFatalInjury
+                      : false
                   ),
                 };
               });
@@ -239,11 +251,13 @@ export default function ClaimDetailPage({ mode }) {
                 setClaim((prev) => ({
                   ...prev,
                   nonMotorCategory,
+                  wibaFatalInjury: nonMotorCategory === "WIBA" ? prev.wibaFatalInjury : false,
                   pendingDocsReceived: normalizeReceivedKeys(
                     pendingChecklists,
                     prev.claimType,
                     nonMotorCategory || null,
-                    prev.pendingDocsReceived
+                    prev.pendingDocsReceived,
+                    nonMotorCategory === "WIBA" ? prev.wibaFatalInjury : false
                   ),
                 }));
               }}
@@ -318,10 +332,36 @@ export default function ClaimDetailPage({ mode }) {
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
               Pending documents checklist
             </p>
+            {claim.claimType === "NON-MOTOR" && claim.nonMotorCategory === "WIBA" ? (
+              <label className="mb-4 flex items-center gap-2 text-sm text-slate-800">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-[#0078c8]"
+                  checked={!!claim.wibaFatalInjury}
+                  disabled={!canEdit}
+                  onChange={(e) => {
+                    const wibaFatalInjury = e.target.checked;
+                    setClaim((prev) => ({
+                      ...prev,
+                      wibaFatalInjury,
+                      pendingDocsReceived: normalizeReceivedKeys(
+                        pendingChecklists,
+                        prev.claimType,
+                        prev.nonMotorCategory || null,
+                        prev.pendingDocsReceived,
+                        wibaFatalInjury
+                      ),
+                    }));
+                  }}
+                />
+                Fatal injury claim (show additional required documents)
+              </label>
+            ) : null}
             <PendingDocumentsChecklist
               checklists={pendingChecklists}
               claimType={claim.claimType}
               nonMotorCategory={claim.nonMotorCategory || null}
+              wibaFatalInjury={!!claim.wibaFatalInjury}
               receivedKeys={claim.pendingDocsReceived}
               otherText={claim.pendingDocsOther}
               disabled={!canEdit}

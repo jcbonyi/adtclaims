@@ -96,6 +96,7 @@ const claimInputSchema = z.object({
   nonMotorCategory: z.enum(["WIBA", "OTHER"]).nullable().optional(),
   pendingDocsReceived: z.array(z.string()).optional().default([]),
   pendingDocsOther: z.string().nullable().optional(),
+  wibaFatalInjury: z.boolean().optional().default(false),
 }).superRefine((data, ctx) => {
   if (
     data.claimType === "NON-MOTOR" &&
@@ -139,10 +140,15 @@ function toSnakeCaseClaim(payload) {
       normalizeReceivedKeys(
         payload.claimType,
         payload.claimType === "NON-MOTOR" ? payload.nonMotorCategory : null,
-        payload.pendingDocsReceived || []
+        payload.pendingDocsReceived || [],
+        !!payload.wibaFatalInjury
       )
     ),
     pending_docs_other: String(payload.pendingDocsOther || "").trim() || null,
+    wiba_fatal_injury:
+      payload.claimType === "NON-MOTOR" && payload.nonMotorCategory === "WIBA"
+        ? !!payload.wibaFatalInjury
+        : false,
   };
 }
 
@@ -303,6 +309,11 @@ async function ensureDb() {
   `);
 
   await pool.query(`
+    ALTER TABLE claims
+      ADD COLUMN IF NOT EXISTS wiba_fatal_injury BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS user_audit_logs (
       id SERIAL PRIMARY KEY,
       target_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -385,9 +396,11 @@ function mapClaim(row) {
     pendingDocsReceived: normalizeReceivedKeys(
       row.claim_type,
       row.non_motor_category,
-      row.pending_docs_received
+      row.pending_docs_received,
+      !!row.wiba_fatal_injury
     ),
     pendingDocsOther: row.pending_docs_other || "",
+    wibaFatalInjury: !!row.wiba_fatal_injury,
     closureDate: row.closure_date,
     daysOpen,
     agingBucket: calcAgingBucket(daysOpen),
@@ -571,6 +584,7 @@ async function maybeLoadInMemorySnapshot() {
           non_motor_category: row.non_motor_category ?? null,
           pending_docs_received: pendingDocsJson,
           pending_docs_other: row.pending_docs_other ?? null,
+          wiba_fatal_injury: row.wiba_fatal_injury ?? false,
         };
       });
 
@@ -598,6 +612,7 @@ async function maybeLoadInMemorySnapshot() {
           "non_motor_category",
           "pending_docs_received",
           "pending_docs_other",
+          "wiba_fatal_injury",
           "created_by",
           "created_at",
           "updated_at",
@@ -1583,9 +1598,10 @@ async function createOrUpdateClaim(req, res, mode) {
             non_motor_category = $17,
             pending_docs_received = $18::jsonb,
             pending_docs_other = $19,
+            wiba_fatal_injury = $20,
             closure_date = ${closureDateSql},
             updated_at = NOW()
-        WHERE id = $20
+        WHERE id = $21
       `,
         [
           c.insurer,
@@ -1607,6 +1623,7 @@ async function createOrUpdateClaim(req, res, mode) {
           c.non_motor_category,
           c.pending_docs_received,
           c.pending_docs_other,
+          c.wiba_fatal_injury,
           claimId,
         ]
       );
@@ -1631,6 +1648,7 @@ async function createOrUpdateClaim(req, res, mode) {
         c.non_motor_category,
         c.pending_docs_received,
         c.pending_docs_other,
+        c.wiba_fatal_injury,
         CLOSED_STATUSES.has(c.claim_status) ? new Date().toISOString().slice(0, 10) : null,
         req.user.id,
       ];
@@ -1646,9 +1664,9 @@ async function createOrUpdateClaim(req, res, mode) {
           assessed_date, claim_status, claim_status_other, date_ra_issued,
           date_vehicle_released, vehicle_value, repair_estimate, garage,
           non_motor_category, pending_docs_received, pending_docs_other,
-          closure_date, created_by
+          wiba_fatal_injury, closure_date, created_by
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
         RETURNING id
       `,
           [cid, ...claimValues]
@@ -1662,9 +1680,9 @@ async function createOrUpdateClaim(req, res, mode) {
           assessed_date, claim_status, claim_status_other, date_ra_issued,
           date_vehicle_released, vehicle_value, repair_estimate, garage,
           non_motor_category, pending_docs_received, pending_docs_other,
-          closure_date, created_by
+          wiba_fatal_injury, closure_date, created_by
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
         RETURNING id
       `,
           claimValues
@@ -1956,7 +1974,8 @@ app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
         row.non_motor_category,
         row.pending_docs_received,
         row.claim_status,
-        row.pending_docs_other
+        row.pending_docs_other,
+        !!row.wiba_fatal_injury
       ),
       formatDateForCsv(row.date_ra_issued),
       formatDateForCsv(row.date_vehicle_released),

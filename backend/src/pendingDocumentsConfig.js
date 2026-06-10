@@ -18,16 +18,40 @@ const PENDING_DOCUMENT_CHECKLISTS = {
   WIBA: {
     label: "WIBA claim — required documents",
     items: [
-      { key: "wiba_claim_form", label: "WIBA claim notification form (signed)" },
-      { key: "wiba_policy", label: "WIBA policy schedule / endorsement" },
-      { key: "p3_medical", label: "P3 / medical assessment form (DOSH) (Dosh 1)" },
-      { key: "employer_accident_report", label: "Employer report of accident (DOSH) (Dosh 2)" },
-      { key: "dosh_award", label: "DOSH compensation assessment / award (if issued) (Dosh 4)" },
-      { key: "employee_id", label: "Employee national ID / passport copy" },
-      { key: "payslips", label: "Payslips — last 3 months pre-injury" },
-      { key: "nhif_nssf", label: "NHIF / NSSF contribution records" },
-      { key: "medical_bills", label: "Hospital bills and medical receipts" },
-      { key: "disability_assessment", label: "Disability assessment report (if applicable)" },
+      { key: "dosh_form_part_1_2", label: "Dosh form part I&II" },
+      { key: "executed_claim_form", label: "Executed claim form" },
+      { key: "dosh_wiba_4", label: "DOSH/WIBA 4" },
+      { key: "police_abstract", label: "Police abstract for road accident/assault" },
+      {
+        key: "claimant_statement",
+        label: "Claimant's detailed statement on the circumstances of the loss",
+      },
+      { key: "witness_statement", label: "Witness statement" },
+      { key: "medical_reports", label: "Medical reports" },
+      {
+        key: "payslips_3_months",
+        label: "Three months' pay slips prior to the loss (certified)",
+      },
+      { key: "medical_receipts", label: "Original medical receipts/bills" },
+      { key: "claimant_id", label: "Copy of the claimants ID (both sides)" },
+      { key: "employment_contract", label: "Employment contract" },
+      { key: "sick_off_sheets", label: "Hospital sick off sheets in relation to the claim" },
+      {
+        key: "discharge_summary",
+        label: "Discharge summary if admitted, treatment notes",
+      },
+      {
+        key: "any_other",
+        label: "Any other relevant documents related to this claim",
+        freeText: true,
+      },
+    ],
+    fatalItemsLabel: "Additional documents for fatal injuries",
+    fatalItems: [
+      { key: "dosh_wiba_6", label: "DOSH WIBA 6 (certificate of dependency)" },
+      { key: "death_certificate", label: "Copy of death certificate" },
+      { key: "certificate_return_id", label: "Certificate of return of ID" },
+      { key: "postmortem_report", label: "Copy of postmortem report" },
     ],
   },
   OTHER_NON_MOTOR: {
@@ -63,8 +87,17 @@ function getChecklistDefinition(claimType, nonMotorCategory) {
   return { key, ...PENDING_DOCUMENT_CHECKLISTS[key] };
 }
 
-function getChecklistItems(claimType, nonMotorCategory) {
-  return getChecklistDefinition(claimType, nonMotorCategory).items;
+function shouldIncludeFatalWibaItems(claimType, nonMotorCategory, wibaFatalInjury) {
+  return claimType === "NON-MOTOR" && nonMotorCategory === "WIBA" && !!wibaFatalInjury;
+}
+
+function getChecklistItems(claimType, nonMotorCategory, wibaFatalInjury = false) {
+  const def = getChecklistDefinition(claimType, nonMotorCategory);
+  const items = [...(def.items || [])];
+  if (shouldIncludeFatalWibaItems(claimType, nonMotorCategory, wibaFatalInjury)) {
+    items.push(...(def.fatalItems || []));
+  }
+  return items;
 }
 
 function parseReceivedKeys(value) {
@@ -81,8 +114,10 @@ function parseReceivedKeys(value) {
   return [];
 }
 
-function normalizeReceivedKeys(claimType, nonMotorCategory, receivedKeys) {
-  const valid = new Set(getChecklistItems(claimType, nonMotorCategory).map((i) => i.key));
+function normalizeReceivedKeys(claimType, nonMotorCategory, receivedKeys, wibaFatalInjury = false) {
+  const valid = new Set(
+    getChecklistItems(claimType, nonMotorCategory, wibaFatalInjury).map((i) => i.key)
+  );
   return parseReceivedKeys(receivedKeys).filter((k) => valid.has(k));
 }
 
@@ -94,9 +129,17 @@ function getItemOutstandingLabel(item, pendingDocsOther) {
   return item.label;
 }
 
-function getOutstandingDocuments(claimType, nonMotorCategory, receivedKeys, pendingDocsOther = "") {
-  const received = new Set(normalizeReceivedKeys(claimType, nonMotorCategory, receivedKeys));
-  return getChecklistItems(claimType, nonMotorCategory)
+function getOutstandingDocuments(
+  claimType,
+  nonMotorCategory,
+  receivedKeys,
+  pendingDocsOther = "",
+  wibaFatalInjury = false
+) {
+  const received = new Set(
+    normalizeReceivedKeys(claimType, nonMotorCategory, receivedKeys, wibaFatalInjury)
+  );
+  return getChecklistItems(claimType, nonMotorCategory, wibaFatalInjury)
     .filter((item) => !received.has(item.key))
     .map((item) => getItemOutstandingLabel(item, pendingDocsOther));
 }
@@ -106,14 +149,16 @@ function formatOutstandingForExport(
   nonMotorCategory,
   receivedKeys,
   claimStatus,
-  pendingDocsOther = ""
+  pendingDocsOther = "",
+  wibaFatalInjury = false
 ) {
   if (claimStatus !== "Pending Documents") return "";
   const outstanding = getOutstandingDocuments(
     claimType,
     nonMotorCategory,
     receivedKeys,
-    pendingDocsOther
+    pendingDocsOther,
+    wibaFatalInjury
   );
   if (!outstanding.length) return "All documents received";
   return outstanding.map((label, index) => `${index + 1}. ${label}`).join("\n");
