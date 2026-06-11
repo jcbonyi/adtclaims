@@ -126,11 +126,29 @@ function isRenewalAtRisk(row, settings) {
   return daysUntilRenewal >= 0 && daysUntilRenewal <= alertDays;
 }
 
+/** Compute overdue/status at read time — avoids DB writes on every list fetch. */
+function resolveComplianceState(row, settings) {
+  if (hasValuationValue(row.valuation_value)) {
+    return { isOverdue: false, effectiveStatus: REPORT_RECEIVED_STATUS };
+  }
+  if (COMPLETED_STATUSES.has(row.status)) {
+    return { isOverdue: false, effectiveStatus: row.status };
+  }
+  const isOverdue = isComplianceOverdue(row, settings);
+  const effectiveStatus = isOverdue ? "Overdue" : row.status;
+  return { isOverdue, effectiveStatus };
+}
+
 function rowToClient(row, extras = {}) {
   const { valueDifference, percentageVariance } = computeValueMetrics(
     row.sum_insured_before != null ? Number(row.sum_insured_before) : null,
     row.valuation_value != null ? Number(row.valuation_value) : null
   );
+  const compliance = extras.settings
+    ? resolveComplianceState(row, extras.settings)
+    : null;
+  const status = compliance?.effectiveStatus ?? row.status;
+  const isOverdue = compliance?.isOverdue ?? !!row.is_overdue;
   return {
     id: row.id,
     insuredName: row.insured_name,
@@ -148,7 +166,7 @@ function rowToClient(row, extras = {}) {
     valueDifference: row.value_difference != null ? Number(row.value_difference) : valueDifference,
     percentageVariance:
       row.percentage_variance != null ? Number(row.percentage_variance) : percentageVariance,
-    status: row.status,
+    status,
     assignedOfficerId: row.assigned_officer_id,
     officerName: extras.officerName || row.officer_name || null,
     relationshipManager: row.relationship_manager || "",
@@ -156,7 +174,7 @@ function rowToClient(row, extras = {}) {
     claimId: row.claim_id,
     policyNumber: row.policy_number || "",
     requiresValuation: !!row.requires_valuation,
-    isOverdue: !!row.is_overdue,
+    isOverdue,
     renewalAtRisk: !!extras.renewalAtRisk,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -371,29 +389,20 @@ async function getSettings(pool) {
   return res.rows[0] || { inspection_overdue_days: 2, renewal_alert_days: 30 };
 }
 
+/** Persist compliance flags — only for scheduler/import, not routine reads. */
 async function recomputeComplianceFlags(pool, settings) {
   const s = settings || (await getSettings(pool));
   const rows = await pool.query(`
-    SELECT id, status, valuation_request_date, inspection_date, policy_renewal_date, valuation_value
+    SELECT id, status, valuation_request_date, valuation_value, is_overdue
     FROM valuations
     WHERE requires_valuation = TRUE
   `);
   for (const row of rows.rows) {
-    if (hasValuationValue(row.valuation_value)) {
-      await pool.query(
-        `UPDATE valuations SET is_overdue = FALSE, status = $2, updated_at = NOW() WHERE id = $1`,
-        [row.id, REPORT_RECEIVED_STATUS]
-      );
-      continue;
-    }
-    const overdue = isComplianceOverdue(row, s);
-    let newStatus = row.status;
-    if (overdue && !COMPLETED_STATUSES.has(row.status) && row.status !== "Overdue") {
-      newStatus = "Overdue";
-    }
+    const { isOverdue, effectiveStatus } = resolveComplianceState(row, s);
+    if (row.is_overdue === isOverdue && row.status === effectiveStatus) continue;
     await pool.query(
       `UPDATE valuations SET is_overdue = $2, status = $3, updated_at = NOW() WHERE id = $1`,
-      [row.id, overdue, newStatus]
+      [row.id, isOverdue, effectiveStatus]
     );
   }
 }
@@ -478,7 +487,6 @@ async function clearValuationRegister(pool) {
 
 async function fetchValuationsList(pool, query = {}) {
   const settings = await getSettings(pool);
-  await recomputeComplianceFlags(pool, settings);
 
   const conditions = ["1=1"];
   const params = [];
@@ -506,16 +514,24 @@ async function fetchValuationsList(pool, query = {}) {
   }
 
   const sql = `
-    SELECT v.*, vr.name AS valuer_name, u.name AS officer_name
+    SELECT
+      v.id, v.insured_name, v.insurance_company, v.policy_renewal_date,
+      v.vehicle_registration, v.financial_interest, v.sum_insured_before,
+      v.assigned_valuer_id, v.valuation_request_date, v.valuation_value,
+      v.value_difference, v.percentage_variance, v.status, v.is_overdue,
+      v.requires_valuation, v.updated_at, v.quotation_id, v.claim_id,
+      vr.name AS valuer_name
     FROM valuations v
     LEFT JOIN valuers vr ON vr.id = v.assigned_valuer_id
-    LEFT JOIN users u ON u.id = v.assigned_officer_id
     WHERE ${conditions.join(" AND ")}
     ORDER BY v.updated_at DESC, v.id DESC
   `;
   const result = await pool.query(sql, params);
   return result.rows.map((row) =>
-    rowToClient(row, { renewalAtRisk: isRenewalAtRisk(row, settings) })
+    rowToClient(row, {
+      settings,
+      renewalAtRisk: isRenewalAtRisk(row, settings),
+    })
   );
 }
 
@@ -533,7 +549,7 @@ async function fetchValuationDetail(pool, id) {
   );
   if (!result.rows[0]) return null;
 
-  const [followUps, statusHistory, auditLogs] = await Promise.all([
+  const [followUps, statusHistory] = await Promise.all([
     pool.query(
       `SELECT f.*, u.name AS officer_name FROM valuation_follow_ups f
        LEFT JOIN users u ON u.id = f.officer_id
@@ -546,15 +562,10 @@ async function fetchValuationDetail(pool, id) {
        WHERE h.valuation_id = $1 ORDER BY h.changed_at DESC`,
       [id]
     ),
-    pool.query(
-      `SELECT a.*, u.name AS changed_by_name FROM valuation_audit_logs a
-       LEFT JOIN users u ON u.id = a.changed_by
-       WHERE a.valuation_id = $1 ORDER BY a.created_at DESC`,
-      [id]
-    ),
   ]);
 
   return rowToClient(result.rows[0], {
+    settings,
     renewalAtRisk: isRenewalAtRisk(result.rows[0], settings),
     followUps: followUps.rows.map((f) => ({
       id: f.id,
@@ -574,35 +585,36 @@ async function fetchValuationDetail(pool, id) {
       changedBy: h.changed_by_name,
       changedAt: h.changed_at,
     })),
-    auditLogs: auditLogs.rows.map((a) => ({
-      id: a.id,
-      field: a.field,
-      oldValue: a.old_value,
-      newValue: a.new_value,
-      changedBy: a.changed_by_name,
-      createdAt: a.created_at,
-    })),
   });
 }
 
 async function buildDashboardData(pool) {
   const settings = await getSettings(pool);
-  await recomputeComplianceFlags(pool, settings);
 
   const result = await pool.query(`
-    SELECT v.*, vr.name AS valuer_name
+    SELECT
+      v.insurance_company, v.valuation_request_date, v.valuation_value,
+      v.value_difference, v.status, v.is_overdue, v.policy_renewal_date,
+      v.updated_at, v.id, v.insured_name, v.vehicle_registration,
+      vr.name AS valuer_name
     FROM valuations v
     LEFT JOIN valuers vr ON vr.id = v.assigned_valuer_id
     WHERE v.requires_valuation = TRUE
   `);
-  const rows = result.rows;
+  const rows = result.rows.map((row) => {
+    const compliance = resolveComplianceState(row, settings);
+    return { ...row, _effectiveStatus: compliance.effectiveStatus, _isOverdue: compliance.isOverdue };
+  });
 
   const totalRequiring = rows.length;
-  const completed = rows.filter((r) => COMPLETED_STATUSES.has(r.status)).length;
-  const overdue = rows.filter((r) => r.is_overdue || r.status === "Overdue").length;
-  const scheduled = rows.filter((r) => SCHEDULED_STATUSES.has(r.status)).length;
+  const completed = rows.filter((r) => COMPLETED_STATUSES.has(r._effectiveStatus)).length;
+  const overdue = rows.filter((r) => r._isOverdue).length;
+  const scheduled = rows.filter((r) => SCHEDULED_STATUSES.has(r._effectiveStatus)).length;
   const pending = rows.filter(
-    (r) => !COMPLETED_STATUSES.has(r.status) && !SCHEDULED_STATUSES.has(r.status) && r.status !== "Overdue"
+    (r) =>
+      !COMPLETED_STATUSES.has(r._effectiveStatus) &&
+      !SCHEDULED_STATUSES.has(r._effectiveStatus) &&
+      r._effectiveStatus !== "Overdue"
   ).length;
   const valueIncreased = rows.filter((r) => Number(r.value_difference) > 0).length;
   const valueDecreased = rows.filter((r) => Number(r.value_difference) < 0).length;
@@ -618,7 +630,7 @@ async function buildDashboardData(pool) {
   let turnaroundCount = 0;
 
   for (const row of rows) {
-    statusMap.set(row.status, (statusMap.get(row.status) || 0) + 1);
+    statusMap.set(row._effectiveStatus, (statusMap.get(row._effectiveStatus) || 0) + 1);
     const insurer = row.insurance_company?.trim() || "—";
     insurerMap.set(insurer, (insurerMap.get(insurer) || 0) + 1);
     const valuer = row.valuer_name?.trim() || "Unassigned";
@@ -640,7 +652,9 @@ async function buildDashboardData(pool) {
 
   const renewalAlerts = rows
     .filter((r) => isRenewalAtRisk(r, settings))
-    .map((r) => rowToClient(r, { renewalAtRisk: true }))
+    .map((r) =>
+      rowToClient(r, { settings, renewalAtRisk: true })
+    )
     .slice(0, 20);
 
   return {
@@ -1111,8 +1125,8 @@ function registerValuationRoutes(app, deps) {
         dbMode
       );
       await onPersist?.();
-      notifyValuationEvent?.("assignment", await fetchValuationDetail(pool, id));
       const detail = await fetchValuationDetail(pool, id);
+      notifyValuationEvent?.("assignment", detail);
       return res.status(201).json(detail);
     } catch (err) {
       if (err?.issues) {

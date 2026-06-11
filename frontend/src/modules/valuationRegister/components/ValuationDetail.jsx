@@ -124,9 +124,11 @@ export function ValuationDetail() {
         await dispatch({ type: "ADD", payload });
         navigate(valuationPath("register"));
       } else {
-        await dispatch({ type: "UPDATE", payload: { id: Number(id), patch: payload } });
-        const refreshed = await fetchValuation(id);
-        setDetail(refreshed);
+        const updated = await dispatch({
+          type: "UPDATE",
+          payload: { id: Number(id), patch: payload },
+        });
+        setDetail(updated);
       }
     } catch (err) {
       setError(err.response?.data?.message || "Save failed");

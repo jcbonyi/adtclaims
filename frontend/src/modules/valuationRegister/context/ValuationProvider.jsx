@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer } from "react";
-import { ValuationContext } from "./valuationContext";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { ValuationDispatchContext, ValuationStateContext } from "./valuationContext";
 import { getInitialReducerState, valuationReducer } from "../valuationReducer";
 import {
   createValuation,
@@ -11,6 +11,8 @@ import {
 
 export function ValuationProvider({ children }) {
   const [state, dispatch] = useReducer(valuationReducer, undefined, getInitialReducerState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const reloadFromServer = useCallback(async () => {
     const [data, valuers] = await Promise.all([fetchValuations(), fetchValuers()]);
@@ -41,39 +43,40 @@ export function ValuationProvider({ children }) {
     };
   }, []);
 
-  const syncDispatch = useCallback(
-    async (action) => {
-      switch (action.type) {
-        case "ADD": {
-          await createValuation(action.payload);
-          await reloadFromServer();
-          return;
-        }
-        case "UPDATE": {
-          const { id, patch } = action.payload;
-          const current = state.valuations.find((v) => v.id === id);
-          if (!current) throw new Error("Valuation not found");
-          await updateValuation(id, { ...current, ...patch });
-          await reloadFromServer();
-          return;
-        }
-        case "LOG_FOLLOW_UP": {
-          const { id, ...payload } = action.payload;
-          await logValuationFollowUp(id, payload);
-          await reloadFromServer();
-          return;
-        }
-        default:
-          dispatch(action);
+  const syncDispatch = useCallback(async (action) => {
+    switch (action.type) {
+      case "ADD": {
+        const created = await createValuation(action.payload);
+        dispatch({ type: "UPSERT_VALUATION", payload: created });
+        return created;
       }
-    },
-    [reloadFromServer, state.valuations]
+      case "UPDATE": {
+        const { id, patch } = action.payload;
+        const current = stateRef.current.valuations.find((v) => v.id === id);
+        if (!current) throw new Error("Valuation not found");
+        const updated = await updateValuation(id, { ...current, ...patch });
+        dispatch({ type: "UPSERT_VALUATION", payload: updated });
+        return updated;
+      }
+      case "LOG_FOLLOW_UP": {
+        const { id, ...payload } = action.payload;
+        const updated = await logValuationFollowUp(id, payload);
+        dispatch({ type: "UPSERT_VALUATION", payload: updated });
+        return updated;
+      }
+      default:
+        dispatch(action);
+    }
+  }, []);
+
+  const dispatchValue = useMemo(
+    () => ({ dispatch: syncDispatch, reloadFromServer }),
+    [syncDispatch, reloadFromServer]
   );
 
-  const value = useMemo(
-    () => ({ state, dispatch: syncDispatch, reloadFromServer }),
-    [state, syncDispatch, reloadFromServer]
+  return (
+    <ValuationDispatchContext.Provider value={dispatchValue}>
+      <ValuationStateContext.Provider value={state}>{children}</ValuationStateContext.Provider>
+    </ValuationDispatchContext.Provider>
   );
-
-  return <ValuationContext.Provider value={value}>{children}</ValuationContext.Provider>;
 }

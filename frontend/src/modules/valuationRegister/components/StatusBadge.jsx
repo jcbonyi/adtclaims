@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { STATUS_BADGE_STYLES } from "../constants";
 
-export function StatusBadge({ status }) {
+export const StatusBadge = memo(function StatusBadge({ status }) {
   const style = STATUS_BADGE_STYLES[status] || STATUS_BADGE_STYLES["Pending Appointment"];
   return (
     <span
@@ -14,4 +15,4 @@ export function StatusBadge({ status }) {
       {status}
     </span>
   );
-}
+});

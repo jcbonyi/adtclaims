@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { useValuations } from "../context/useValuations";
@@ -46,6 +46,7 @@ export function Register({ onView, onCreate }) {
   const [importResult, setImportResult] = useState(null);
   const [clearResult, setClearResult] = useState(null);
 
+  const deferredQ = useDeferredValue(filters.q);
   const hasActiveFilters = Boolean(filters.q || filters.status || filters.insurer || filters.valuerId);
 
   const exportParams = useMemo(
@@ -66,14 +67,14 @@ export function Register({ onView, onCreate }) {
       if (filters.status && v.status !== filters.status) return false;
       if (filters.insurer && !v.insuranceCompany?.toLowerCase().includes(filters.insurer.toLowerCase())) return false;
       if (filters.valuerId && String(v.assignedValuerId) !== filters.valuerId) return false;
-      if (filters.q) {
-        const q = filters.q.toLowerCase();
+      if (deferredQ) {
+        const q = deferredQ.toLowerCase();
         const hay = `${v.insuredName} ${v.vehicleRegistration} ${v.insuranceCompany}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [state.valuations, filters, kpiFilter]);
+  }, [state.valuations, filters.status, filters.insurer, filters.valuerId, deferredQ, kpiFilter]);
 
   const kpiLabel = KPI_FILTER_LABELS[kpiFilter];
 
