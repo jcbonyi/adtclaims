@@ -158,7 +158,31 @@ export function ValuationDetail() {
         {field("sumInsuredBefore", "Sum Insured Before", "number")}
         {field("valuationRequestDate", "Valuation Request Date", "date")}
         {field("inspectionDate", "Inspection Date", "date")}
-        {field("valuationValue", "Valuation Value", "number")}
+        <label>
+          Valuation Value
+          <input
+            type="number"
+            className="adt-input"
+            value={form.valuationValue}
+            disabled={!canEdit}
+            onChange={(e) => {
+              const value = e.target.value;
+              setForm((f) => ({
+                ...f,
+                valuationValue: value,
+                status:
+                  value !== "" && !Number.isNaN(Number(value))
+                    ? "Valuation Report Received"
+                    : f.status,
+              }));
+            }}
+          />
+          {form.valuationValue !== "" && !Number.isNaN(Number(form.valuationValue)) ? (
+            <span style={{ fontSize: 12, color: "#047857", marginTop: 4, display: "block" }}>
+              Report received — status will be set to Valuation Report Received on save.
+            </span>
+          ) : null}
+        </label>
         {field("relationshipManager", "Relationship Manager")}
 
         <label>

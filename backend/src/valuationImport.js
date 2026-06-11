@@ -140,14 +140,17 @@ function parseValuationImportRow(row, valuerByName) {
   const insuredName = String(pickValue(row, HEADER_ALIASES.insuredName)).trim();
   if (!insuredName) return { error: "missing insured name" };
 
-  const statusRaw = String(pickValue(row, HEADER_ALIASES.status) || "Pending Appointment").trim();
-  const status = VALUATION_STATUSES.includes(statusRaw) ? statusRaw : "Pending Appointment";
-
   const valuerName = String(pickValue(row, HEADER_ALIASES.assignedValuer)).trim();
   const assignedValuerId = valuerName ? valuerByName.get(valuerName.toLowerCase()) || null : null;
 
   const sumInsuredBefore = parseMoney(pickValue(row, HEADER_ALIASES.sumInsuredBefore));
   const valuationValue = parseMoney(pickValue(row, HEADER_ALIASES.valuationValue));
+
+  const statusRaw = String(pickValue(row, HEADER_ALIASES.status) || "Pending Appointment").trim();
+  let status = VALUATION_STATUSES.includes(statusRaw) ? statusRaw : "Pending Appointment";
+  if (valuationValue != null) {
+    status = "Valuation Report Received";
+  }
   let valueDifference = null;
   let percentageVariance = null;
   if (sumInsuredBefore != null && valuationValue != null) {

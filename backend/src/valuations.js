@@ -24,6 +24,17 @@ const VALUATION_STATUSES = [
 
 const COMPLETED_STATUSES = new Set(["Valuation Report Received", "Closed"]);
 const SCHEDULED_STATUSES = new Set(["Appointment Scheduled", "Awaiting Inspection"]);
+const REPORT_RECEIVED_STATUS = "Valuation Report Received";
+
+const DEFAULT_VALUERS = [
+  { name: "AA", email: "", company: "AA" },
+  { name: "AUTO STAR", email: "", company: "AUTO STAR" },
+  { name: "LINKS", email: "", company: "LINKS" },
+  { name: "REGENT", email: "", company: "REGENT" },
+  { name: "SAFETY SURVEYORS", email: "", company: "SAFETY SURVEYORS" },
+  { name: "SOLVIT", email: "", company: "SOLVIT" },
+  { name: "SONIC", email: "", company: "SONIC" },
+];
 
 const FOLLOW_UP_METHODS = ["Call", "Email", "Visit"];
 
@@ -63,6 +74,24 @@ function daysBetween(fromDate, toDate) {
   const startUtc = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
   const endUtc = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
   return Math.floor((endUtc - startUtc) / (1000 * 60 * 60 * 24));
+}
+
+function hasValuationValue(value) {
+  if (value === null || value === undefined || value === "") return false;
+  const n = Number(value);
+  return Number.isFinite(n);
+}
+
+/** When a valuation value is recorded, the report is received and the file is closed. */
+function resolveStatusForValuationValue(bodyOrCols) {
+  const value =
+    bodyOrCols.valuationValue !== undefined
+      ? bodyOrCols.valuationValue
+      : bodyOrCols.valuation_value;
+  if (hasValuationValue(value)) {
+    return REPORT_RECEIVED_STATUS;
+  }
+  return bodyOrCols.status;
 }
 
 function computeValueMetrics(sumInsuredBefore, valuationValue) {
@@ -138,6 +167,7 @@ function rowToClient(row, extras = {}) {
 
 function bodyToDbColumns(body) {
   const metrics = computeValueMetrics(body.sumInsuredBefore, body.valuationValue);
+  const status = resolveStatusForValuationValue(body);
   return {
     insured_name: body.insuredName.trim(),
     insurance_company: body.insuranceCompany || "",
@@ -152,7 +182,7 @@ function bodyToDbColumns(body) {
     valuation_value: body.valuationValue ?? null,
     value_difference: metrics.valueDifference,
     percentage_variance: metrics.percentageVariance,
-    status: body.status,
+    status,
     assigned_officer_id: body.assignedOfficerId ?? null,
     relationship_manager: body.relationshipManager || "",
     quotation_id: body.quotationId ?? null,
@@ -343,11 +373,18 @@ async function getSettings(pool) {
 async function recomputeComplianceFlags(pool, settings) {
   const s = settings || (await getSettings(pool));
   const rows = await pool.query(`
-    SELECT id, status, valuation_request_date, inspection_date, policy_renewal_date
+    SELECT id, status, valuation_request_date, inspection_date, policy_renewal_date, valuation_value
     FROM valuations
     WHERE requires_valuation = TRUE
   `);
   for (const row of rows.rows) {
+    if (hasValuationValue(row.valuation_value)) {
+      await pool.query(
+        `UPDATE valuations SET is_overdue = FALSE, status = $2, updated_at = NOW() WHERE id = $1`,
+        [row.id, REPORT_RECEIVED_STATUS]
+      );
+      continue;
+    }
     const overdue = isComplianceOverdue(row, s);
     let newStatus = row.status;
     if (overdue && !COMPLETED_STATUSES.has(row.status) && row.status !== "Overdue") {
@@ -398,30 +435,36 @@ async function logStatusTransition(client, valuationId, fromStatus, toStatus, us
   }
 }
 
+async function ensureDefaultValuers(pool, nextSerialId) {
+  let added = 0;
+  for (const v of DEFAULT_VALUERS) {
+    const existing = await pool.query(
+      `SELECT id FROM valuers WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))`,
+      [v.name]
+    );
+    if (existing.rows[0]) continue;
+    const id = await nextSerialId(pool, "valuers");
+    await pool.query(`INSERT INTO valuers (id, name, email, company) VALUES ($1, $2, $3, $4)`, [
+      id,
+      v.name,
+      v.email,
+      v.company,
+    ]);
+    added += 1;
+  }
+  if (added > 0) {
+    console.log(`Added ${added} default valuer(s).`);
+  }
+}
+
 async function seedValuersIfEmpty(pool, nextSerialId) {
   const count = await pool.query("SELECT COUNT(*)::int AS n FROM valuers");
-  if (count.rows[0].n > 0) return;
-  const seeds = [
-    { name: "Kenya Auto Valuers Ltd", email: "dispatch@kenyaautovaluers.co.ke", company: "Kenya Auto Valuers" },
-    { name: "Capital Valuation Services", email: "ops@capitalvaluation.co.ke", company: "Capital Valuation" },
-    { name: "East Africa Motor Assessors", email: "bookings@eamotor.co.ke", company: "EAM Assessors" },
-  ];
-  for (const v of seeds) {
-    if (typeof nextSerialId === "function") {
-      const id = await nextSerialId(pool, "valuers");
-      await pool.query(
-        `INSERT INTO valuers (id, name, email, company) VALUES ($1, $2, $3, $4)`,
-        [id, v.name, v.email, v.company]
-      );
-    } else {
-      await pool.query(`INSERT INTO valuers (name, email, company) VALUES ($1, $2, $3)`, [
-        v.name,
-        v.email,
-        v.company,
-      ]);
-    }
+  if (count.rows[0].n === 0) {
+    await ensureDefaultValuers(pool, nextSerialId);
+    console.log(`Seeded ${DEFAULT_VALUERS.length} valuers.`);
+    return;
   }
-  console.log(`Seeded ${seeds.length} valuers.`);
+  await ensureDefaultValuers(pool, nextSerialId);
 }
 
 async function fetchValuationsList(pool, query = {}) {
@@ -977,14 +1020,22 @@ function registerValuationRoutes(app, deps) {
       const body = valuationBodySchema.parse(req.body);
       const cols = bodyToDbColumns(body);
       const settings = await getSettings(pool);
-      const overdue = isComplianceOverdue(
-        {
-          status: body.status,
-          valuation_request_date: cols.valuation_request_date,
-          inspection_date: cols.inspection_date,
-        },
-        settings
-      );
+      const reportComplete = hasValuationValue(cols.valuation_value);
+      const overdue = reportComplete
+        ? false
+        : isComplianceOverdue(
+            {
+              status: cols.status,
+              valuation_request_date: cols.valuation_request_date,
+              inspection_date: cols.inspection_date,
+            },
+            settings
+          );
+      const finalStatus = reportComplete
+        ? REPORT_RECEIVED_STATUS
+        : overdue
+          ? "Overdue"
+          : cols.status;
       const id = await nextSerialId(pool, "valuations");
       const result = await pool.query(
         `INSERT INTO valuations (
@@ -1011,7 +1062,7 @@ function registerValuationRoutes(app, deps) {
           cols.valuation_value,
           cols.value_difference,
           cols.percentage_variance,
-          overdue ? "Overdue" : cols.status,
+          finalStatus,
           cols.assigned_officer_id,
           cols.relationship_manager,
           cols.quotation_id,
@@ -1026,7 +1077,7 @@ function registerValuationRoutes(app, deps) {
         pool,
         id,
         null,
-        result.rows[0].status,
+        finalStatus,
         req.user.id,
         nextSerialId,
         dbMode
@@ -1055,14 +1106,22 @@ function registerValuationRoutes(app, deps) {
       const body = valuationBodySchema.parse(merged);
       const cols = bodyToDbColumns(body);
       const settings = await getSettings(pool);
-      const overdue = isComplianceOverdue(
-        {
-          status: body.status,
-          valuation_request_date: cols.valuation_request_date,
-          inspection_date: cols.inspection_date,
-        },
-        settings
-      );
+      const reportComplete = hasValuationValue(cols.valuation_value);
+      const overdue = reportComplete
+        ? false
+        : isComplianceOverdue(
+            {
+              status: cols.status,
+              valuation_request_date: cols.valuation_request_date,
+              inspection_date: cols.inspection_date,
+            },
+            settings
+          );
+      const finalStatus = reportComplete
+        ? REPORT_RECEIVED_STATUS
+        : overdue && !COMPLETED_STATUSES.has(cols.status)
+          ? "Overdue"
+          : cols.status;
 
       const auditFields = [
         ["insured_name", "insuredName"],
@@ -1083,7 +1142,6 @@ function registerValuationRoutes(app, deps) {
         });
       }
 
-      const newStatus = overdue && !COMPLETED_STATUSES.has(body.status) ? "Overdue" : body.status;
       const result = await pool.query(
         `UPDATE valuations SET
           insured_name = $2, insurance_company = $3, policy_renewal_date = $4,
@@ -1109,7 +1167,7 @@ function registerValuationRoutes(app, deps) {
           cols.valuation_value,
           cols.value_difference,
           cols.percentage_variance,
-          newStatus,
+          finalStatus,
           cols.assigned_officer_id,
           cols.relationship_manager,
           cols.quotation_id,
@@ -1120,12 +1178,12 @@ function registerValuationRoutes(app, deps) {
         ]
       );
 
-      if (existing.rows[0].status !== newStatus) {
+      if (existing.rows[0].status !== finalStatus) {
         await logStatusTransition(
           pool,
           id,
           existing.rows[0].status,
-          newStatus,
+          finalStatus,
           req.user.id,
           nextSerialId,
           dbMode
@@ -1275,6 +1333,7 @@ module.exports = {
   SETTINGS_SNAPSHOT_COLUMNS,
   ensureValuationsTables,
   seedValuersIfEmpty,
+  ensureDefaultValuers,
   registerValuationRoutes,
   recomputeComplianceFlags,
   fetchValuationsList,
