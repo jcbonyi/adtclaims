@@ -9,7 +9,7 @@ export function AppLayout({ children, onOpenSearch }) {
         <header className="adt-topbar">
           <div>
             <h1 className="adt-topbar-title">Motor Valuation Tracker</h1>
-            <div className="adt-topbar-sub">Compliance & valuation management</div>
+            <div className="adt-topbar-sub">2-day valuation report turnaround</div>
           </div>
           {onOpenSearch ? (
             <button type="button" className="adt-btn adt-btn-primary" onClick={onOpenSearch}>

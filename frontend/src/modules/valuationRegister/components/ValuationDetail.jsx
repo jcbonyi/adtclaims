@@ -2,31 +2,39 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import {
+  REPORT_TURNAROUND_DAYS,
   VALUATION_STATUSES,
   canEditValuations,
 } from "../constants";
 import { useValuations } from "../context/useValuations";
 import { fetchValuation, prefillFromClaim, prefillFromQuotation } from "../api/valuationsApi";
 import { valuationPath } from "../basePath";
+import { formatCurrency, formatDisplayDate } from "../utils/format";
 import { StatusBadge } from "./StatusBadge";
-import { Button, Card, PageHeader } from "./ui";
+import {
+  AlertBanner,
+  Button,
+  Card,
+  FormField,
+  FormSection,
+  LoadingState,
+  PageHeader,
+  Timeline,
+  VarianceBadge,
+} from "./ui";
 
 const emptyForm = {
   insuredName: "",
   insuranceCompany: "",
   policyRenewalDate: "",
   vehicleRegistration: "",
-  vehicleMakeModel: "",
   financialInterest: "",
   sumInsuredBefore: "",
   assignedValuerId: "",
   valuationRequestDate: "",
-  inspectionDate: "",
   valuationValue: "",
   status: "Pending Appointment",
   assignedOfficerId: "",
-  relationshipManager: "",
-  policyNumber: "",
   quotationId: null,
   claimId: null,
   requiresValuation: true,
@@ -43,6 +51,7 @@ export function ValuationDetail() {
 
   const [form, setForm] = useState(emptyForm);
   const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,45 +77,35 @@ export function ValuationDetail() {
         }
         return;
       }
-      const data = await fetchValuation(id);
-      setDetail(data);
-      setForm({
-        insuredName: data.insuredName || "",
-        insuranceCompany: data.insuranceCompany || "",
-        policyRenewalDate: data.policyRenewalDate || "",
-        vehicleRegistration: data.vehicleRegistration || "",
-        vehicleMakeModel: data.vehicleMakeModel || "",
-        financialInterest: data.financialInterest || "",
-        sumInsuredBefore: data.sumInsuredBefore ?? "",
-        assignedValuerId: data.assignedValuerId ?? "",
-        valuationRequestDate: data.valuationRequestDate || "",
-        inspectionDate: data.inspectionDate || "",
-        valuationValue: data.valuationValue ?? "",
-        status: data.status,
-        assignedOfficerId: data.assignedOfficerId ?? "",
-        relationshipManager: data.relationshipManager || "",
-        policyNumber: data.policyNumber || "",
-        quotationId: data.quotationId,
-        claimId: data.claimId,
-        requiresValuation: data.requiresValuation,
-      });
+      setLoading(true);
+      try {
+        const data = await fetchValuation(id);
+        setDetail(data);
+        setForm({
+          insuredName: data.insuredName || "",
+          insuranceCompany: data.insuranceCompany || "",
+          policyRenewalDate: data.policyRenewalDate || "",
+          vehicleRegistration: data.vehicleRegistration || "",
+          financialInterest: data.financialInterest || "",
+          sumInsuredBefore: data.sumInsuredBefore ?? "",
+          assignedValuerId: data.assignedValuerId ?? "",
+          valuationRequestDate: data.valuationRequestDate || "",
+          valuationValue: data.valuationValue ?? "",
+          status: data.status,
+          assignedOfficerId: data.assignedOfficerId ?? "",
+          quotationId: data.quotationId,
+          claimId: data.claimId,
+          requiresValuation: data.requiresValuation,
+        });
+      } finally {
+        setLoading(false);
+      }
     }
     load().catch((err) => setError(err.response?.data?.message || "Failed to load"));
   }, [id, isNew, searchParams]);
 
-  function field(name, label, type = "text") {
-    return (
-      <label>
-        {label}
-        <input
-          type={type}
-          className="adt-input"
-          value={form[name]}
-          disabled={!canEdit}
-          onChange={(e) => setForm((f) => ({ ...f, [name]: e.target.value }))}
-        />
-      </label>
-    );
+  function setField(name, value) {
+    setForm((f) => ({ ...f, [name]: value }));
   }
 
   async function handleSave(e) {
@@ -136,140 +135,247 @@ export function ValuationDetail() {
     }
   }
 
+  if (loading) return <LoadingState label="Loading valuation…" />;
+
+  const followUpItems = (detail?.followUps || []).map((f) => ({
+    id: f.id,
+    meta: formatDisplayDate(f.followUpDate),
+    title: `${f.method}${f.responseReceived ? " · Response received" : ""}`,
+    detail: [
+      f.remarks,
+      f.nextActionDate ? `Next action: ${formatDisplayDate(f.nextActionDate)}` : null,
+    ].filter(Boolean).join(" · "),
+  }));
+
+  const historyItems = (detail?.statusHistory || []).map((h) => ({
+    id: h.id,
+    meta: h.changedAt,
+    title: `${h.fromStatus || "—"} → ${h.toStatus}`,
+    detail: h.changedBy ? `By ${h.changedBy}` : "System",
+  }));
+
   return (
     <>
       <PageHeader
-        title={isNew ? "New Valuation" : `Valuation — ${form.insuredName}`}
-        subtitle={detail?.isOverdue ? "This valuation is overdue." : "Policy and valuation details."}
-        actions={<Button tone="ghost" onClick={() => navigate(valuationPath("register"))}>← Back</Button>}
+        title={isNew ? "New Valuation" : form.insuredName || "Valuation"}
+        subtitle={
+          detail?.isOverdue
+            ? `Overdue — valuation report not received within ${REPORT_TURNAROUND_DAYS} days of the request.`
+            : `Valuation report turnaround: ${REPORT_TURNAROUND_DAYS} days from request date.`
+        }
+        actions={
+          <Button tone="ghost" onClick={() => navigate(valuationPath("register"))}>
+            ← Back to register
+          </Button>
+        }
       />
 
-      {error ? <p className="adt-error">{error}</p> : null}
-      {detail?.isOverdue ? <p className="adt-alert">Overdue — no inspection within compliance window.</p> : null}
+      {error ? (
+        <AlertBanner tone="danger">{error}</AlertBanner>
+      ) : null}
 
-      <form onSubmit={handleSave} className="adt-form-grid">
-        {field("insuredName", "Insured Name")}
-        {field("insuranceCompany", "Insurance Company")}
-        {field("policyNumber", "Policy Number")}
-        {field("policyRenewalDate", "Policy Renewal Date", "date")}
-        {field("vehicleRegistration", "Vehicle Registration")}
-        {field("vehicleMakeModel", "Make & Model")}
-        {field("financialInterest", "Financial Interest")}
-        {field("sumInsuredBefore", "Sum Insured Before", "number")}
-        {field("valuationRequestDate", "Valuation Request Date", "date")}
-        {field("inspectionDate", "Inspection Date", "date")}
-        <label>
-          Valuation Value
-          <input
-            type="number"
-            className="adt-input"
-            value={form.valuationValue}
-            disabled={!canEdit}
-            onChange={(e) => {
-              const value = e.target.value;
-              setForm((f) => ({
-                ...f,
-                valuationValue: value,
-                status:
-                  value !== "" && !Number.isNaN(Number(value))
-                    ? "Valuation Report Received"
-                    : f.status,
-              }));
-            }}
-          />
-          {form.valuationValue !== "" && !Number.isNaN(Number(form.valuationValue)) ? (
-            <span style={{ fontSize: 12, color: "#047857", marginTop: 4, display: "block" }}>
-              Report received — status will be set to Valuation Report Received on save.
+      {detail?.isOverdue ? (
+        <AlertBanner tone="warning">
+          Overdue — the valuation report was not received within {REPORT_TURNAROUND_DAYS} days of the request date.
+        </AlertBanner>
+      ) : null}
+
+      {detail ? (
+        <div className="val-detail-summary">
+          <StatusBadge status={detail.status} />
+          {detail.percentageVariance != null ? (
+            <VarianceBadge
+              value={detail.valueDifference}
+              percentage={detail.percentageVariance}
+            />
+          ) : null}
+          {detail.sumInsuredBefore != null ? (
+            <span className="val-detail-meta">
+              Sum insured: {formatCurrency(detail.sumInsuredBefore)}
             </span>
           ) : null}
-        </label>
-        {field("relationshipManager", "Relationship Manager")}
+          {detail.valuationValue != null ? (
+            <span className="val-detail-meta">
+              Valuation: {formatCurrency(detail.valuationValue)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
-        <label>
-          Assigned Valuer
-          <select
-            className="adt-input"
-            disabled={!canEdit}
-            value={form.assignedValuerId}
-            onChange={(e) => setForm((f) => ({ ...f, assignedValuerId: e.target.value }))}
-          >
-            <option value="">—</option>
-            {state.valuers.map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Status
-          <select
-            className="adt-input"
-            disabled={!canEdit}
-            value={form.status}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-          >
-            {VALUATION_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-
-        {detail ? (
-          <div style={{ gridColumn: "1 / -1" }}>
-            <StatusBadge status={detail.status} />
-            {detail.valueDifference != null ? (
-              <span style={{ marginLeft: 12 }}>
-                Difference: {detail.valueDifference} ({detail.percentageVariance}%)
-              </span>
-            ) : null}
+      <form onSubmit={handleSave}>
+        <FormSection title="Insured & Policy" description="Client and policy information.">
+          <div className="adt-form-grid">
+            <FormField label="Insured Name" required>
+              <input
+                className="adt-input"
+                value={form.insuredName}
+                disabled={!canEdit}
+                onChange={(e) => setField("insuredName", e.target.value)}
+                required
+              />
+            </FormField>
+            <FormField label="Insurance Company">
+              <input
+                className="adt-input"
+                value={form.insuranceCompany}
+                disabled={!canEdit}
+                onChange={(e) => setField("insuranceCompany", e.target.value)}
+              />
+            </FormField>
+            <FormField label="Policy Renewal Date">
+              <input
+                type="date"
+                className="adt-input"
+                value={form.policyRenewalDate}
+                disabled={!canEdit}
+                onChange={(e) => setField("policyRenewalDate", e.target.value)}
+              />
+            </FormField>
           </div>
-        ) : null}
+        </FormSection>
 
-        {detail?.quotationId ? (
-          <p style={{ gridColumn: "1 / -1" }}>
-            Linked quotation: <Link to={`/quotations/client/${detail.quotationId}`}>#{detail.quotationId}</Link>
-          </p>
-        ) : null}
-        {detail?.claimId ? (
-          <p style={{ gridColumn: "1 / -1" }}>
-            Linked claim: <Link to={`/claims/${detail.claimId}`}>#{detail.claimId}</Link>
-          </p>
+        <FormSection title="Vehicle" description="Registration and financial interest.">
+          <div className="adt-form-grid">
+            <FormField label="Vehicle Registration">
+              <input
+                className="adt-input"
+                value={form.vehicleRegistration}
+                disabled={!canEdit}
+                onChange={(e) => setField("vehicleRegistration", e.target.value)}
+              />
+            </FormField>
+            <FormField label="Financial Interest">
+              <input
+                className="adt-input"
+                value={form.financialInterest}
+                disabled={!canEdit}
+                onChange={(e) => setField("financialInterest", e.target.value)}
+              />
+            </FormField>
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Valuation"
+          description={`Request and reported value. Report due within ${REPORT_TURNAROUND_DAYS} days of request date.`}
+        >
+          <div className="adt-form-grid">
+            <FormField label="Sum Insured Before">
+              <input
+                type="number"
+                className="adt-input"
+                value={form.sumInsuredBefore}
+                disabled={!canEdit}
+                onChange={(e) => setField("sumInsuredBefore", e.target.value)}
+              />
+            </FormField>
+            <FormField label="Valuation Request Date">
+              <input
+                type="date"
+                className="adt-input"
+                value={form.valuationRequestDate}
+                disabled={!canEdit}
+                onChange={(e) => setField("valuationRequestDate", e.target.value)}
+              />
+            </FormField>
+            <FormField
+              label="Valuation Value"
+              hint={
+                form.valuationValue !== "" && !Number.isNaN(Number(form.valuationValue))
+                  ? "Report received — status will be set to Valuation Report Received on save."
+                  : undefined
+              }
+            >
+              <input
+                type="number"
+                className="adt-input"
+                value={form.valuationValue}
+                disabled={!canEdit}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    valuationValue: value,
+                    status:
+                      value !== "" && !Number.isNaN(Number(value))
+                        ? "Valuation Report Received"
+                        : f.status,
+                  }));
+                }}
+              />
+            </FormField>
+            <FormField label="Assigned Valuer">
+              <select
+                className="adt-input"
+                disabled={!canEdit}
+                value={form.assignedValuerId}
+                onChange={(e) => setField("assignedValuerId", e.target.value)}
+              >
+                <option value="">—</option>
+                {state.valuers.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Status">
+              <select
+                className="adt-input"
+                disabled={!canEdit}
+                value={form.status}
+                onChange={(e) => setField("status", e.target.value)}
+              >
+                {VALUATION_STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+        </FormSection>
+
+        {detail?.quotationId || detail?.claimId ? (
+          <Card className="mt-4">
+            <h3 className="adt-card-header">Linked records</h3>
+            {detail.quotationId ? (
+              <p>
+                Quotation:{" "}
+                <Link to={`/quotations/client/${detail.quotationId}`}>#{detail.quotationId}</Link>
+              </p>
+            ) : null}
+            {detail.claimId ? (
+              <p>
+                Claim: <Link to={`/claims/${detail.claimId}`}>#{detail.claimId}</Link>
+              </p>
+            ) : null}
+          </Card>
         ) : null}
 
         {canEdit ? (
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="val-form-actions">
             <Button tone="primary" type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : isNew ? "Create Valuation" : "Save Changes"}
+            </Button>
+            <Button tone="ghost" type="button" onClick={() => navigate(valuationPath("register"))}>
+              Cancel
             </Button>
           </div>
         ) : null}
       </form>
 
-      {detail?.followUps?.length ? (
-        <Card style={{ marginTop: 24 }}>
-          <h3 className="adt-card-header">Follow-up Log</h3>
-          <ul>
-            {detail.followUps.map((f) => (
-              <li key={f.id}>
-                {f.followUpDate} — {f.method}: {f.remarks}
-                {f.nextActionDate ? ` (next: ${f.nextActionDate})` : ""}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
-
-      {detail?.statusHistory?.length ? (
-        <Card style={{ marginTop: 16 }}>
-          <h3 className="adt-card-header">Status History</h3>
-          <ul>
-            {detail.statusHistory.map((h) => (
-              <li key={h.id}>
-                {h.changedAt}: {h.fromStatus || "—"} → {h.toStatus} ({h.changedBy || "system"})
-              </li>
-            ))}
-          </ul>
-        </Card>
+      {!isNew && (followUpItems.length > 0 || historyItems.length > 0) ? (
+        <div className="val-detail-timelines">
+          {followUpItems.length > 0 ? (
+            <Card>
+              <h3 className="adt-card-header">Follow-up Log</h3>
+              <Timeline items={followUpItems} />
+            </Card>
+          ) : null}
+          {historyItems.length > 0 ? (
+            <Card>
+              <h3 className="adt-card-header">Status History</h3>
+              <Timeline items={historyItems} />
+            </Card>
+          ) : null}
+        </div>
       ) : null}
     </>
   );

@@ -1,17 +1,45 @@
 import { useEffect, useState } from "react";
 import { fetchReport, downloadValuationsCsv, downloadValuationsExcel } from "../api/valuationsApi";
-import { Button, Card, EmptyState, PageHeader } from "./ui";
+import { formatVariance } from "../utils/format";
+import { StatusBadge } from "./StatusBadge";
+import {
+  Button,
+  Card,
+  EmptyState,
+  KpiCard,
+  KpiRow,
+  LoadingState,
+  PageHeader,
+  ReportTabs,
+} from "./ui";
 
 const REPORT_TYPES = [
-  { id: "pending", label: "Pending Valuations" },
-  { id: "completed", label: "Completed Valuations" },
-  { id: "overdue", label: "Overdue Valuations" },
+  { id: "pending", label: "Pending" },
+  { id: "completed", label: "Completed" },
+  { id: "overdue", label: "Overdue" },
   { id: "by-insurer", label: "By Insurer" },
   { id: "by-valuer", label: "By Valuer" },
   { id: "value-variance", label: "Value Variance" },
-  { id: "compliance", label: "Compliance Performance" },
-  { id: "trends", label: "Monthly Trends" },
+  { id: "compliance", label: "Compliance" },
+  { id: "trends", label: "Trends" },
 ];
+
+const AGGREGATE_LABELS = {
+  label: "Name",
+  insurer: "Insurer",
+  valuer: "Valuer",
+  month: "Month",
+  count: "Count",
+  value: "Count",
+  total: "Total",
+  completed: "Completed",
+  overdue: "Overdue",
+  compliancePct: "Compliance %",
+};
+
+function formatColumnHeader(key) {
+  return AGGREGATE_LABELS[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
+}
 
 export function Analytics() {
   const [active, setActive] = useState("pending");
@@ -60,79 +88,77 @@ export function Analytics() {
         }
       />
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        {REPORT_TYPES.map((r) => (
-          <Button
-            key={r.id}
-            tone={active === r.id ? "primary" : "secondary"}
-            onClick={() => setActive(r.id)}
-          >
-            {r.label}
-          </Button>
-        ))}
-      </div>
+      <ReportTabs items={REPORT_TYPES} active={active} onChange={setActive} />
 
-      {loading ? <p>Loading report…</p> : null}
+      {loading ? <LoadingState label="Loading report…" /> : null}
 
-      {isCompliance && data ? (
-        <Card>
-          <p>Total requiring: {data.total} · Completed: {data.completed} · Overdue: {data.overdue}</p>
-          <p><strong>Compliance rate: {data.compliancePct}%</strong></p>
+      {!loading && isCompliance && data ? (
+        <KpiRow>
+          <KpiCard label="Total Requiring" value={data.total} />
+          <KpiCard label="Completed" value={data.completed} />
+          <KpiCard label="Overdue" value={data.overdue} />
+          <KpiCard label="Compliance Rate" value={`${data.compliancePct}%`} />
+        </KpiRow>
+      ) : null}
+
+      {!loading && rows.length === 0 && !isAggregate && !isCompliance ? (
+        <EmptyState title="No records">No records for this report.</EmptyState>
+      ) : null}
+
+      {!loading && isAggregate && Array.isArray(data) && data.length > 0 ? (
+        <Card padding={false}>
+          <div className="adt-table-wrap">
+            <table className="adt-table">
+              <thead>
+                <tr>
+                  {Object.keys(data[0]).map((k) => (
+                    <th key={k}>{formatColumnHeader(k)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, i) => (
+                  <tr key={i}>
+                    {Object.entries(row).map(([k, v]) => (
+                      <td key={k}>
+                        {k === "compliancePct" || k.endsWith("Pct") ? `${v}%` : String(v)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       ) : null}
 
-      {!loading && rows.length === 0 && !isAggregate ? (
-        <EmptyState>No records for this report.</EmptyState>
-      ) : null}
-
-      {isAggregate && Array.isArray(data) && data.length > 0 ? (
-        <div className="adt-table-wrap">
-          <table className="adt-table">
-            <thead>
-              <tr>
-                {Object.keys(data[0]).map((k) => (
-                  <th key={k}>{k}</th>
+      {!loading && !isAggregate && rows.length > 0 ? (
+        <Card padding={false}>
+          <div className="adt-table-wrap">
+            <table className="adt-table">
+              <thead>
+                <tr>
+                  <th>Insured</th>
+                  <th>Reg</th>
+                  <th>Insurer</th>
+                  <th>Status</th>
+                  <th>Variance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="val-insured-cell">{row.insuredName}</td>
+                    <td>{row.vehicleRegistration || "—"}</td>
+                    <td>{row.insuranceCompany || "—"}</td>
+                    <td><StatusBadge status={row.status} /></td>
+                    <td>{formatVariance(row.percentageVariance)}</td>
+                  </tr>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((row, i) => (
-                <tr key={i}>
-                  {Object.values(row).map((v, j) => (
-                    <td key={j}>{String(v)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {!isAggregate && rows.length > 0 ? (
-        <div className="adt-table-wrap">
-          <table className="adt-table">
-            <thead>
-              <tr>
-                <th>Insured</th>
-                <th>Reg</th>
-                <th>Insurer</th>
-                <th>Status</th>
-                <th>Variance %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.insuredName}</td>
-                  <td>{row.vehicleRegistration}</td>
-                  <td>{row.insuranceCompany}</td>
-                  <td>{row.status}</td>
-                  <td>{row.percentageVariance ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : null}
     </>
   );

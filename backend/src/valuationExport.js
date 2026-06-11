@@ -17,21 +17,17 @@ function valuationToExportRow(v) {
   return {
     "Insured Name": v.insuredName || "",
     "Insurance Company": v.insuranceCompany || "",
-    "Policy Number": v.policyNumber || "",
     "Policy Renewal Date": formatDateForExport(v.policyRenewalDate),
     "Vehicle Registration": v.vehicleRegistration || "",
-    "Make & Model": v.vehicleMakeModel || "",
     "Financial Interest": v.financialInterest || "",
     "Sum Insured Before": v.sumInsuredBefore ?? "",
     "Assigned Valuer": v.valuerName || "",
     "Valuation Request Date": formatDateForExport(v.valuationRequestDate),
-    "Inspection Date": formatDateForExport(v.inspectionDate),
     "Valuation Value": v.valuationValue ?? "",
     "Value Difference": v.valueDifference ?? "",
     "Variance %": v.percentageVariance ?? "",
     Status: v.status || "",
     Overdue: v.isOverdue ? "Yes" : "No",
-    "Relationship Manager": v.relationshipManager || "",
     "Assigned Officer": v.officerName || "",
   };
 }
@@ -108,7 +104,7 @@ async function buildValuationsTemplateBuffer() {
   return buildValuationsWorkbookBuffer([], {
     title: "ADT Motor Valuations — Import Template",
     filterSummary:
-      "Fill in rows below the header. Required: Insured Name. Dates as DD/MM/YYYY or YYYY-MM-DD.",
+      "Fill in rows below the header. Required: Insured Name. Valuation report turnaround: 2 days from request date. Dates as DD/MM/YYYY or YYYY-MM-DD.",
   });
 }
 

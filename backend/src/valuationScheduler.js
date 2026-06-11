@@ -34,8 +34,6 @@ async function runComplianceChecks(pool) {
     WHERE v.requires_valuation = TRUE
   `);
 
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-
   for (const row of rows.rows) {
     const valuation = rowToClient(row, {
       valuerName: row.valuer_name,
@@ -45,18 +43,6 @@ async function runComplianceChecks(pool) {
 
     if (row.is_overdue) {
       await notifyValuationEvent("overdue", valuation, extras);
-    }
-
-    if (row.inspection_date === tomorrow) {
-      await notifyValuationEvent("inspection_reminder", valuation, extras);
-    }
-
-    if (
-      row.inspection_date &&
-      !COMPLETED_STATUSES.has(row.status) &&
-      daysBetween(row.inspection_date) >= 3
-    ) {
-      await notifyValuationEvent("missing_report", valuation, extras);
     }
 
     if (isRenewalAtRisk(row, settings)) {

@@ -4,6 +4,9 @@ export const THEME = {
   textMuted: "#64748b",
 };
 
+/** Valuation report must be received within this many days of the request date. */
+export const REPORT_TURNAROUND_DAYS = 2;
+
 export const VALUATION_STATUSES = [
   "Pending Appointment",
   "Valuation Requested",

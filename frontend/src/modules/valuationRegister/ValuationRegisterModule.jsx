@@ -12,6 +12,7 @@ import { Analytics } from "./components/Analytics";
 import { ValuationDetail } from "./components/ValuationDetail";
 import { ValuerManagement } from "./components/ValuerManagement";
 import { QuickSearchModal } from "./components/QuickSearchModal";
+import { AlertBanner, LoadingState } from "./components/ui";
 import { canManageValuers } from "./constants";
 import "./valuationRegister.css";
 
@@ -43,8 +44,8 @@ function ValuationShell() {
 
   if (!state.ready) {
     return (
-      <div className="valuation-module-root quotation-module-root" style={{ padding: 24 }}>
-        <p>Loading motor valuations…</p>
+      <div className="valuation-module-root quotation-module-root val-module-loading">
+        <LoadingState label="Loading motor valuations…" />
       </div>
     );
   }
@@ -52,9 +53,7 @@ function ValuationShell() {
   return (
     <div className="valuation-module-root quotation-module-root">
       {state.loadError ? (
-        <div role="status" style={{ margin: "0 0 12px", padding: "10px 14px", background: "#FEF3C7", borderRadius: 8 }}>
-          {state.loadError}
-        </div>
+        <AlertBanner tone="warning">{state.loadError}</AlertBanner>
       ) : null}
       <AppLayout onOpenSearch={() => setSearchOpen(true)}>
         <Routes>

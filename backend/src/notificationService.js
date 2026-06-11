@@ -67,32 +67,16 @@ async function notifyValuationEvent(event, valuation, extras = {}) {
         text: `A motor valuation has been assigned.\n\n${summary}\n\nPlease log in to the ADT system to review.`,
       });
       break;
-    case "inspection_reminder":
-      await sendEmail({
-        to: [officerEmail, valuerEmail].filter(Boolean),
-        subject: `Inspection reminder: ${valuation.insuredName}`,
-        text: `Inspection is scheduled for ${valuation.inspectionDate || "soon"}.\n\n${summary}`,
-      });
-      break;
     case "overdue":
       await sendEmail({
         to: [officerEmail, ...managementRecipients()],
         subject: `Overdue valuation: ${valuation.insuredName}`,
-        text: `This valuation is overdue (no inspection within the compliance window).\n\n${summary}`,
-      });
-      break;
-    case "missing_report":
-      await sendEmail({
-        to: officerEmail,
-        subject: `Missing valuation report: ${valuation.insuredName}`,
-        text: `Inspection was completed but the valuation report has not been received.\n\n${summary}`,
+        text: `This valuation is overdue — the valuation report was not received within the 2-day turnaround.\n\n${summary}`,
       });
       break;
     case "renewal_risk":
       await sendEmail({
-        to: valuation.relationshipManager
-          ? [valuation.relationshipManager]
-          : managementRecipients(),
+        to: managementRecipients(),
         subject: `Renewal approaching — valuation pending: ${valuation.insuredName}`,
         text: `Policy renewal is approaching and valuation is not yet complete.\n\n${summary}\nRenewal: ${valuation.policyRenewalDate || "—"}`,
       });

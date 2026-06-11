@@ -16,8 +16,17 @@ import {
   canManageValuers,
   filterValuationsByKpi,
 } from "../constants";
+import { formatDisplayDate } from "../utils/format";
 import { StatusBadge } from "./StatusBadge";
-import { Button, EmptyState, PageHeader } from "./ui";
+import {
+  AlertBanner,
+  Button,
+  Card,
+  EmptyState,
+  FilterBar,
+  PageHeader,
+  VarianceBadge,
+} from "./ui";
 
 export function Register({ onView, onCreate }) {
   const { user } = useAuth();
@@ -36,6 +45,8 @@ export function Register({ onView, onCreate }) {
   const [clearing, setClearing] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [clearResult, setClearResult] = useState(null);
+
+  const hasActiveFilters = Boolean(filters.q || filters.status || filters.insurer || filters.valuerId);
 
   const exportParams = useMemo(
     () => ({
@@ -57,7 +68,7 @@ export function Register({ onView, onCreate }) {
       if (filters.valuerId && String(v.assignedValuerId) !== filters.valuerId) return false;
       if (filters.q) {
         const q = filters.q.toLowerCase();
-        const hay = `${v.insuredName} ${v.vehicleRegistration} ${v.insuranceCompany} ${v.policyNumber}`.toLowerCase();
+        const hay = `${v.insuredName} ${v.vehicleRegistration} ${v.insuranceCompany}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -65,6 +76,10 @@ export function Register({ onView, onCreate }) {
   }, [state.valuations, filters, kpiFilter]);
 
   const kpiLabel = KPI_FILTER_LABELS[kpiFilter];
+
+  function clearFilters() {
+    setFilters({ q: "", status: "", insurer: "", valuerId: "" });
+  }
 
   async function handleExportExcel() {
     setExporting(true);
@@ -173,41 +188,28 @@ export function Register({ onView, onCreate }) {
       />
 
       {kpiLabel ? (
-        <div className="adt-kpi-filter-banner">
-          <span>
-            Dashboard filter: <strong>{kpiLabel}</strong>
-          </span>
-          <Link to={valuationPath("register")} className="adt-link-btn">
+        <AlertBanner tone="info">
+          Dashboard filter: <strong>{kpiLabel}</strong>{" "}
+          <Link to={valuationPath("register")} className="adt-link-btn" style={{ marginLeft: 8 }}>
             Clear filter
           </Link>
-        </div>
+        </AlertBanner>
       ) : null}
 
       {clearResult ? (
-        <div
-          className="adt-card"
-          style={{ marginBottom: 16, padding: 12, background: "#EFF6FF", border: "1px solid #3B82F6" }}
-        >
-          <p style={{ margin: 0 }}>
-            Register cleared — removed <strong>{clearResult.deleted ?? 0}</strong> valuation(s). You can import your Excel file now.
-          </p>
-        </div>
+        <AlertBanner tone="success" onDismiss={() => setClearResult(null)}>
+          Register cleared — removed <strong>{clearResult.deleted ?? 0}</strong> valuation(s). You can import your Excel file now.
+        </AlertBanner>
       ) : null}
 
       {importResult ? (
-        <div
-          className="adt-card"
-          style={{ marginBottom: 16, padding: 12, background: "#ECFDF5", border: "1px solid #10B981" }}
-        >
+        <AlertBanner tone="success" onDismiss={() => setImportResult(null)}>
           <p style={{ margin: 0 }}>
             Imported <strong>{importResult.inserted}</strong> of {importResult.totalRows} rows
-            {importResult.headerRowIndex
-              ? ` (header row ${importResult.headerRowIndex})`
-              : ""}
-            .
+            {importResult.headerRowIndex ? ` (header row ${importResult.headerRowIndex})` : ""}.
           </p>
           {importResult.warnings?.length ? (
-            <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13 }}>
+            <ul className="val-alert-list">
               {importResult.warnings.slice(0, 8).map((w, i) => (
                 <li key={i}>Row {w.row}: {w.reason}</li>
               ))}
@@ -216,20 +218,22 @@ export function Register({ onView, onCreate }) {
               ) : null}
             </ul>
           ) : null}
-        </div>
+        </AlertBanner>
       ) : null}
 
-      <div className="adt-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+      <FilterBar showClear={hasActiveFilters} onClear={clearFilters}>
         <input
-          className="adt-input"
+          className="adt-input val-filter-input"
           placeholder="Search insured, reg, insurer…"
           value={filters.q}
           onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+          aria-label="Search valuations"
         />
         <select
-          className="adt-input"
+          className="adt-input val-filter-input"
           value={filters.status}
           onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+          aria-label="Filter by status"
         >
           <option value="">All statuses</option>
           {VALUATION_STATUSES.map((s) => (
@@ -237,63 +241,71 @@ export function Register({ onView, onCreate }) {
           ))}
         </select>
         <input
-          className="adt-input"
+          className="adt-input val-filter-input"
           placeholder="Insurer"
           value={filters.insurer}
           onChange={(e) => setFilters((f) => ({ ...f, insurer: e.target.value }))}
+          aria-label="Filter by insurer"
         />
         <select
-          className="adt-input"
+          className="adt-input val-filter-input"
           value={filters.valuerId}
           onChange={(e) => setFilters((f) => ({ ...f, valuerId: e.target.value }))}
+          aria-label="Filter by valuer"
         >
           <option value="">All valuers</option>
           {state.valuers.map((v) => (
             <option key={v.id} value={v.id}>{v.name}</option>
           ))}
         </select>
-      </div>
+      </FilterBar>
 
       {rows.length === 0 ? (
-        <EmptyState>No valuations match your filters.</EmptyState>
+        <EmptyState title="No results">
+          {hasActiveFilters || kpiLabel
+            ? "No valuations match your filters. Try clearing filters or adjusting your search."
+            : "No valuations in the register yet. Add one manually or import from Excel."}
+        </EmptyState>
       ) : (
-        <div className="adt-table-wrap">
-          <table className="adt-table">
-            <thead>
-              <tr>
-                <th>Insured</th>
-                <th>Reg</th>
-                <th>Insurer</th>
-                <th>Valuer</th>
-                <th>Request</th>
-                <th>Inspection</th>
-                <th>Variance</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={row.isOverdue ? "adt-row--danger" : ""}
-                  onClick={() => onView(row.id)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <td>{row.insuredName}</td>
-                  <td>{row.vehicleRegistration}</td>
-                  <td>{row.insuranceCompany}</td>
-                  <td>{row.valuerName || "—"}</td>
-                  <td>{row.valuationRequestDate || "—"}</td>
-                  <td>{row.inspectionDate || "—"}</td>
-                  <td>
-                    {row.percentageVariance != null ? `${row.percentageVariance}%` : "—"}
-                  </td>
-                  <td><StatusBadge status={row.status} /></td>
+        <Card padding={false}>
+          <div className="adt-table-wrap">
+            <table className="adt-table val-register-table">
+              <thead>
+                <tr>
+                  <th>Insured</th>
+                  <th>Reg</th>
+                  <th>Insurer</th>
+                  <th>Valuer</th>
+                  <th>Request</th>
+                  <th>Variance</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={`val-row-clickable${row.isOverdue ? " adt-row--danger" : ""}`}
+                    onClick={() => onView(row.id)}
+                  >
+                    <td className="val-insured-cell">{row.insuredName}</td>
+                    <td>{row.vehicleRegistration || "—"}</td>
+                    <td>{row.insuranceCompany || "—"}</td>
+                    <td>{row.valuerName || "—"}</td>
+                    <td>{formatDisplayDate(row.valuationRequestDate)}</td>
+                    <td>
+                      <VarianceBadge
+                        value={row.valueDifference}
+                        percentage={row.percentageVariance}
+                      />
+                    </td>
+                    <td><StatusBadge status={row.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </>
   );

@@ -109,12 +109,13 @@ function computeValueMetrics(sumInsuredBefore, valuationValue) {
   return { valueDifference, percentageVariance };
 }
 
+/** Valuation report is due within 2 days of the request date (configurable via settings). */
 function isComplianceOverdue(row, settings) {
   if (COMPLETED_STATUSES.has(row.status)) return false;
   if (!row.valuation_request_date) return false;
-  if (row.inspection_date) return false;
-  const overdueDays = settings?.inspection_overdue_days ?? 2;
-  return daysBetween(row.valuation_request_date) > overdueDays;
+  if (hasValuationValue(row.valuation_value)) return false;
+  const turnaroundDays = settings?.inspection_overdue_days ?? 2;
+  return daysBetween(row.valuation_request_date) > turnaroundDays;
 }
 
 function isRenewalAtRisk(row, settings) {
@@ -628,9 +629,12 @@ async function buildDashboardData(pool) {
       monthMap.set(month, (monthMap.get(month) || 0) + 1);
     }
 
-    if (row.valuation_request_date && row.inspection_date && COMPLETED_STATUSES.has(row.status)) {
-      turnaroundTotal += daysBetween(row.valuation_request_date, row.inspection_date);
-      turnaroundCount += 1;
+    if (row.valuation_request_date && hasValuationValue(row.valuation_value)) {
+      const endDate = row.updated_at ? String(row.updated_at).slice(0, 10) : null;
+      if (endDate) {
+        turnaroundTotal += daysBetween(row.valuation_request_date, endDate);
+        turnaroundCount += 1;
+      }
     }
   }
 
@@ -1051,7 +1055,7 @@ function registerValuationRoutes(app, deps) {
             {
               status: cols.status,
               valuation_request_date: cols.valuation_request_date,
-              inspection_date: cols.inspection_date,
+              valuation_value: cols.valuation_value,
             },
             settings
           );
@@ -1137,7 +1141,7 @@ function registerValuationRoutes(app, deps) {
             {
               status: cols.status,
               valuation_request_date: cols.valuation_request_date,
-              inspection_date: cols.inspection_date,
+              valuation_value: cols.valuation_value,
             },
             settings
           );
