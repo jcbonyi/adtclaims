@@ -72,9 +72,53 @@ export async function prefillFromClaim(claimId) {
   return res.data;
 }
 
-export function exportValuationsUrl(format, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const base = client.defaults.baseURL || "/api";
-  const path = format === "csv" ? "/valuations-export.csv" : "/valuations-export.xlsx";
-  return `${base}${path}${qs ? `?${qs}` : ""}`;
+function downloadBlob(res, filename) {
+  const contentType = res.headers["content-type"] || "";
+  if (res.status !== 200) {
+    throw new Error("Download failed");
+  }
+  if (filename.endsWith(".xlsx") && !contentType.includes("spreadsheetml") && !contentType.includes("octet-stream")) {
+    throw new Error("Server did not return an Excel file");
+  }
+  const blob = new Blob([res.data], { type: contentType || "application/octet-stream" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export async function downloadValuationsExcel(params = {}) {
+  const res = await client.get("/valuations-export.xlsx", {
+    responseType: "blob",
+    params,
+  });
+  downloadBlob(res, "ADT-motor-valuations.xlsx");
+}
+
+export async function downloadValuationsCsv(params = {}) {
+  const res = await client.get("/valuations-export.csv", {
+    responseType: "blob",
+    params,
+  });
+  downloadBlob(res, "ADT-motor-valuations.csv");
+}
+
+export async function downloadValuationsTemplate() {
+  const res = await client.get("/valuations-export-template.xlsx", {
+    responseType: "blob",
+  });
+  downloadBlob(res, "ADT-motor-valuations-template.xlsx");
+}
+
+export async function importValuationsExcel(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await client.post("/valuations/import-excel", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
 }

@@ -90,9 +90,34 @@ function buildValuationsCsv(rows) {
   return lines.join("\n");
 }
 
+function buildExportFilterSummary(query = {}) {
+  const parts = [];
+  if (query.q) parts.push(`Search: "${String(query.q).trim()}"`);
+  if (query.status) parts.push(`Status: ${query.status}`);
+  if (query.insurer) parts.push(`Insurer: ${query.insurer}`);
+  if (query.valuerId) parts.push(`Valuer ID: ${query.valuerId}`);
+  if (query.renewalFrom || query.renewalTo) {
+    parts.push(`Renewal: ${query.renewalFrom || "…"} – ${query.renewalTo || "…"}`);
+  }
+  return parts.length
+    ? `Filters applied — ${parts.join(" · ")}`
+    : "No register filters applied — export includes all valuations.";
+}
+
+async function buildValuationsTemplateBuffer() {
+  return buildValuationsWorkbookBuffer([], {
+    title: "ADT Motor Valuations — Import Template",
+    filterSummary:
+      "Fill in rows below the header. Required: Insured Name. Dates as DD/MM/YYYY or YYYY-MM-DD.",
+  });
+}
+
 module.exports = {
+  EXPORT_COLUMNS,
   buildValuationsWorkbookBuffer,
+  buildValuationsTemplateBuffer,
   buildValuationsCsv,
+  buildExportFilterSummary,
   valuationToExportRow,
   formatDateForExport,
 };

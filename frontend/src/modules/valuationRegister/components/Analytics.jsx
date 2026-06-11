@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import client from "../../../api/client";
-import { fetchReport } from "../api/valuationsApi";
+import { fetchReport, downloadValuationsCsv, downloadValuationsExcel } from "../api/valuationsApi";
 import { Button, Card, EmptyState, PageHeader } from "./ui";
 
 const REPORT_TYPES = [
@@ -14,25 +13,24 @@ const REPORT_TYPES = [
   { id: "trends", label: "Monthly Trends" },
 ];
 
-function downloadExport(format) {
-  const token = localStorage.getItem("claims_token");
-  const base = client.defaults.baseURL || "/api";
-  const path = format === "csv" ? "/valuations-export.csv" : "/valuations-export.xlsx";
-  const url = `${base}${path}`;
-  fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    .then((res) => res.blob())
-    .then((blob) => {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = format === "csv" ? "ADT-motor-valuations.csv" : "ADT-motor-valuations.xlsx";
-      a.click();
-    });
-}
-
 export function Analytics() {
   const [active, setActive] = useState("pending");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport(format) {
+    setExporting(true);
+    try {
+      if (format === "csv") await downloadValuationsCsv();
+      else await downloadValuationsExcel();
+    } catch (err) {
+      console.error(err);
+      window.alert("Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -52,8 +50,12 @@ export function Analytics() {
         subtitle="Compliance reports with Excel and CSV export."
         actions={
           <>
-            <Button tone="secondary" onClick={() => downloadExport("xlsx")}>Export Excel</Button>
-            <Button tone="secondary" onClick={() => downloadExport("csv")}>Export CSV</Button>
+            <Button tone="secondary" onClick={() => handleExport("xlsx")} disabled={exporting}>
+              {exporting ? "Exporting…" : "Export Excel"}
+            </Button>
+            <Button tone="secondary" onClick={() => handleExport("csv")} disabled={exporting}>
+              Export CSV
+            </Button>
           </>
         }
       />

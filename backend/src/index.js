@@ -2387,6 +2387,7 @@ async function startServer() {
     nextSerialId,
     onPersist: maybePersistInMemorySnapshot,
     dbMode,
+    upload,
     notifyValuationEvent: async (event, valuation) => {
       if (!valuation) return;
       const [officer, valuer] = await Promise.all([

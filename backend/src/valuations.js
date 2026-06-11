@@ -1,6 +1,12 @@
 const { z } = require("zod");
 const { canEditValuations, canManageValuers, requirePermission } = require("./permissions");
-const { buildValuationsWorkbookBuffer, buildValuationsCsv } = require("./valuationExport");
+const {
+  buildValuationsWorkbookBuffer,
+  buildValuationsCsv,
+  buildValuationsTemplateBuffer,
+  buildExportFilterSummary,
+} = require("./valuationExport");
+const { importValuationsFromExcelBuffer } = require("./valuationImport");
 
 const VALUATION_STATUSES = [
   "Pending Appointment",
@@ -706,7 +712,8 @@ async function buildReport(pool, type) {
 }
 
 function registerValuationRoutes(app, deps) {
-  const { pool, authRequired, requireRole, nextSerialId, onPersist, dbMode, notifyValuationEvent } = deps;
+  const { pool, authRequired, requireRole, nextSerialId, onPersist, dbMode, notifyValuationEvent, upload } =
+    deps;
   const editGuard = [authRequired, requirePermission(canEditValuations)];
   const valuerGuard = [authRequired, requirePermission(canManageValuers)];
 
@@ -864,12 +871,30 @@ function registerValuationRoutes(app, deps) {
     }
   });
 
+  app.get("/api/valuations-export-template.xlsx", authRequired, async (_, res) => {
+    try {
+      const buffer = await buildValuationsTemplateBuffer();
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="ADT-motor-valuations-template.xlsx"'
+      );
+      res.send(buffer);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Template export failed" });
+    }
+  });
+
   app.get("/api/valuations-export.xlsx", authRequired, async (req, res) => {
     try {
       const rows = await fetchValuationsList(pool, req.query);
       const buffer = await buildValuationsWorkbookBuffer(rows, {
         title: "ADT Motor Valuations Register",
-        filterSummary: req.query.q ? `Search: ${req.query.q}` : "",
+        filterSummary: buildExportFilterSummary(req.query),
       });
       res.setHeader(
         "Content-Type",
@@ -895,6 +920,34 @@ function registerValuationRoutes(app, deps) {
       res.status(500).json({ message: "Export failed" });
     }
   });
+
+  if (upload) {
+    app.post(
+      "/api/valuations/import-excel",
+      ...editGuard,
+      upload.single("file"),
+      async (req, res) => {
+        try {
+          if (!req.file) {
+            return res.status(400).json({ message: "Missing file" });
+          }
+          const result = await importValuationsFromExcelBuffer(req.file.buffer, {
+            pool,
+            nextSerialId,
+            dbMode,
+            userId: req.user.id,
+            logStatusTransition,
+          });
+          await recomputeComplianceFlags(pool);
+          await onPersist?.();
+          return res.json(result);
+        } catch (err) {
+          console.error(err);
+          return res.status(500).json({ message: "Import failed" });
+        }
+      }
+    );
+  }
 
   app.get("/api/valuations", authRequired, async (req, res) => {
     try {

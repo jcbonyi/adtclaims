@@ -10,7 +10,7 @@ Full-stack web application for managing insurance claims across insurers and cla
 
 ## Core Features Implemented
 
-- **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, Excel/CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
+- **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, **Excel import/export** (template download, filtered export), CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
 - Claims register with filters, pagination, sorting, global search, row aging color cues, inline status update, and quick remark add
 - Claim detail form for create/edit with append-only remarks and status transition history
 - Overall dashboard with KPI cards and charts (status, insurer, aging)
