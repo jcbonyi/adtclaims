@@ -1,10 +1,6 @@
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-function moduleTab({ isActive }) {
-  return `adt-module-tab${isActive ? " adt-module-tab--active" : ""}`;
-}
-
 function navPill({ isActive }) {
   return `adt-nav-pill${isActive ? " adt-nav-pill--active" : ""}`;
 }
@@ -13,6 +9,8 @@ export default function ShellLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const isQuotations = location.pathname.startsWith("/quotations");
+  const isValuations = location.pathname.startsWith("/valuations");
+  const isClaimsModule = !isQuotations && !isValuations;
 
   if (user?.mustChangePassword && location.pathname !== "/change-password") {
     return <Navigate to="/change-password" replace />;
@@ -48,7 +46,7 @@ export default function ShellLayout() {
           <div className="adt-module-tabs" role="tablist" aria-label="Application module">
             <NavLink
               to="/dashboard"
-              className={() => `adt-module-tab${!isQuotations ? " adt-module-tab--active" : ""}`}
+              className={() => `adt-module-tab${isClaimsModule ? " adt-module-tab--active" : ""}`}
             >
               Claims Tracker
             </NavLink>
@@ -58,8 +56,14 @@ export default function ShellLayout() {
             >
               Quotation Register
             </NavLink>
+            <NavLink
+              to="/valuations"
+              className={() => `adt-module-tab${isValuations ? " adt-module-tab--active" : ""}`}
+            >
+              Motor Valuations
+            </NavLink>
           </div>
-          {!isQuotations ? (
+          {isClaimsModule ? (
             <nav className="adt-subnav mt-3" aria-label="Claims navigation">
               <NavLink to="/dashboard" className={navPill}>
                 Dashboard
@@ -78,7 +82,7 @@ export default function ShellLayout() {
             </nav>
           ) : (
             <p className="mt-2 text-sm text-slate-500">
-              Use the sidebar inside Quotation Register to navigate between dashboard, register, and analytics.
+              Use the sidebar inside {isValuations ? "Motor Valuations" : "Quotation Register"} to navigate.
             </p>
           )}
         </div>
@@ -86,7 +90,7 @@ export default function ShellLayout() {
 
       <main
         id="main-content"
-        className={isQuotations ? "pb-8" : "mx-auto max-w-7xl px-4 pb-10 pt-2"}
+        className={isClaimsModule ? "mx-auto max-w-7xl px-4 pb-10 pt-2" : "pb-8"}
       >
         <Outlet />
       </main>

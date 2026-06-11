@@ -7,6 +7,7 @@ import ForcePasswordChangePage from "./pages/ForcePasswordChangePage";
 import LoginPage from "./pages/LoginPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import QuotationRegisterModule from "./modules/quotationRegister/QuotationRegisterModule";
+import ValuationRegisterModule from "./modules/valuationRegister/ValuationRegisterModule";
 import ShellLayout from "./ui/ShellLayout";
 
 function ProtectedRoute({ children }) {
@@ -39,6 +40,7 @@ function App() {
         <Route path="claims/new" element={<ClaimDetailPage mode="create" />} />
         <Route path="claims/:id" element={<ClaimDetailPage mode="edit" />} />
         <Route path="quotations/*" element={<QuotationRegisterModule />} />
+        <Route path="valuations/*" element={<ValuationRegisterModule />} />
         <Route path="change-password" element={<ForcePasswordChangePage />} />
         <Route
           path="users"

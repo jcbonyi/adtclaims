@@ -67,6 +67,14 @@ export function ClientDetail() {
           {q.clientName}
         </h2>
         <Button tone="accent" onClick={() => setFollowOpen(true)}>Log follow-up</Button>
+        {q.policyNumber ? (
+          <Button
+            tone="navy"
+            onClick={() => navigate(`/valuations/valuation/new?fromQuotation=${q.id}`)}
+          >
+            Create Valuation
+          </Button>
+        ) : null}
         <Button tone="primary" onClick={() => setEditOpen(true)}>Edit</Button>
       </div>
 

@@ -3,7 +3,7 @@ import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { formatDate } from "../utils/format";
 
-const roles = ["Admin", "Claims Officer", "Read-Only"];
+const roles = ["Admin", "Claims Officer", "Operations Team", "Management", "Read-Only"];
 
 export default function UserManagementPage() {
   const { user } = useAuth();

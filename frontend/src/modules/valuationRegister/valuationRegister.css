@@ -1,0 +1,6 @@
+@import "../quotationRegister/quotationRegister.css";
+
+.valuation-module-root {
+  font-family: var(--adt-font);
+  color: var(--adt-text);
+}

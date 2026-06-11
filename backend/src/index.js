@@ -24,6 +24,20 @@ const {
   QUOTATION_SNAPSHOT_COLUMNS,
 } = require("./quotations");
 const {
+  ensureValuationsTables,
+  seedValuersIfEmpty,
+  registerValuationRoutes,
+  VALUATION_SNAPSHOT_COLUMNS,
+  VALUER_SNAPSHOT_COLUMNS,
+  FOLLOW_UP_SNAPSHOT_COLUMNS,
+  STATUS_HISTORY_SNAPSHOT_COLUMNS,
+  AUDIT_SNAPSHOT_COLUMNS,
+  SETTINGS_SNAPSHOT_COLUMNS,
+} = require("./valuations");
+const { ROLES, ROLE_SQL_LIST } = require("./permissions");
+const { notifyValuationEvent, sendTestEmail } = require("./notificationService");
+const { startValuationScheduler } = require("./valuationScheduler");
+const {
   CLAIM_STATUS_GROUPS,
   CLAIM_STATUSES,
   CLOSED_STATUS_LIST,
@@ -74,7 +88,6 @@ let snapshotWriteInProgress = false;
 let snapshotWriteQueued = false;
 
 const CLOSED_STATUSES = new Set(CLOSED_STATUS_LIST);
-const ROLES = ["Admin", "Claims Officer", "Read-Only"];
 
 const claimInputSchema = z.object({
   insurer: z.string().min(1),
@@ -226,7 +239,7 @@ async function ensureDb() {
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('Admin', 'Claims Officer', 'Read-Only')),
+      role TEXT NOT NULL CHECK (role IN (${ROLE_SQL_LIST})),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -326,6 +339,16 @@ async function ensureDb() {
   `);
 
   await ensureQuotationsTable(pool);
+  await ensureValuationsTables(pool);
+
+  try {
+    await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+    await pool.query(
+      `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN (${ROLE_SQL_LIST}))`
+    );
+  } catch {
+    /* pg-mem may not support constraint rename; table was created with updated list */
+  }
 }
 
 async function authRequired(req, res, next) {
@@ -482,18 +505,36 @@ async function maybePersistInMemorySnapshot() {
   try {
     do {
       snapshotWriteQueued = false;
-      const [users, claims, claimRemarks, claimStatusHistory, userAuditLogs, quotations] =
-        await Promise.all([
-          pool.query("SELECT * FROM users ORDER BY id ASC"),
-          pool.query("SELECT * FROM claims ORDER BY id ASC"),
-          pool.query("SELECT * FROM claim_remarks ORDER BY id ASC"),
-          pool.query("SELECT * FROM claim_status_history ORDER BY id ASC"),
-          pool.query("SELECT * FROM user_audit_logs ORDER BY id ASC"),
-          pool.query("SELECT * FROM quotations ORDER BY id ASC"),
-        ]);
+      const [
+        users,
+        claims,
+        claimRemarks,
+        claimStatusHistory,
+        userAuditLogs,
+        quotations,
+        valuers,
+        valuations,
+        valuationFollowUps,
+        valuationStatusHistory,
+        valuationAuditLogs,
+        valuationSettings,
+      ] = await Promise.all([
+        pool.query("SELECT * FROM users ORDER BY id ASC"),
+        pool.query("SELECT * FROM claims ORDER BY id ASC"),
+        pool.query("SELECT * FROM claim_remarks ORDER BY id ASC"),
+        pool.query("SELECT * FROM claim_status_history ORDER BY id ASC"),
+        pool.query("SELECT * FROM user_audit_logs ORDER BY id ASC"),
+        pool.query("SELECT * FROM quotations ORDER BY id ASC"),
+        pool.query("SELECT * FROM valuers ORDER BY id ASC"),
+        pool.query("SELECT * FROM valuations ORDER BY id ASC"),
+        pool.query("SELECT * FROM valuation_follow_ups ORDER BY id ASC"),
+        pool.query("SELECT * FROM valuation_status_history ORDER BY id ASC"),
+        pool.query("SELECT * FROM valuation_audit_logs ORDER BY id ASC"),
+        pool.query("SELECT * FROM valuation_settings ORDER BY id ASC"),
+      ]);
 
       const snapshot = {
-        version: 1,
+        version: 2,
         savedAt: new Date().toISOString(),
         users: users.rows,
         claims: claims.rows,
@@ -501,6 +542,12 @@ async function maybePersistInMemorySnapshot() {
         claimStatusHistory: claimStatusHistory.rows,
         userAuditLogs: userAuditLogs.rows,
         quotations: quotations.rows,
+        valuers: valuers.rows,
+        valuations: valuations.rows,
+        valuationFollowUps: valuationFollowUps.rows,
+        valuationStatusHistory: valuationStatusHistory.rows,
+        valuationAuditLogs: valuationAuditLogs.rows,
+        valuationSettings: valuationSettings.rows,
       };
 
       await fs.mkdir(path.dirname(SNAPSHOT_FILE_PATH), { recursive: true });
@@ -545,6 +592,12 @@ async function maybeLoadInMemorySnapshot() {
 
     await pool.query("BEGIN");
     try {
+      await pool.query("DELETE FROM valuation_audit_logs");
+      await pool.query("DELETE FROM valuation_status_history");
+      await pool.query("DELETE FROM valuation_follow_ups");
+      await pool.query("DELETE FROM valuations");
+      await pool.query("DELETE FROM valuation_settings");
+      await pool.query("DELETE FROM valuers");
       await pool.query("DELETE FROM claim_status_history");
       await pool.query("DELETE FROM claim_remarks");
       await pool.query("DELETE FROM user_audit_logs");
@@ -639,13 +692,41 @@ async function maybeLoadInMemorySnapshot() {
         QUOTATION_SNAPSHOT_COLUMNS,
         snapshot.quotations || []
       );
+      await restoreSnapshotRows("valuers", VALUER_SNAPSHOT_COLUMNS, snapshot.valuers || []);
+      await restoreSnapshotRows(
+        "valuations",
+        VALUATION_SNAPSHOT_COLUMNS,
+        snapshot.valuations || []
+      );
+      await restoreSnapshotRows(
+        "valuation_follow_ups",
+        FOLLOW_UP_SNAPSHOT_COLUMNS,
+        snapshot.valuationFollowUps || []
+      );
+      await restoreSnapshotRows(
+        "valuation_status_history",
+        STATUS_HISTORY_SNAPSHOT_COLUMNS,
+        snapshot.valuationStatusHistory || []
+      );
+      await restoreSnapshotRows(
+        "valuation_audit_logs",
+        AUDIT_SNAPSHOT_COLUMNS,
+        snapshot.valuationAuditLogs || []
+      );
+      await restoreSnapshotRows(
+        "valuation_settings",
+        SETTINGS_SNAPSHOT_COLUMNS,
+        snapshot.valuationSettings || []
+      );
 
       await pool.query("COMMIT");
 
       console.log(
         `Loaded in-memory snapshot: ${snapshot.users?.length || 0} users, ${
           snapshot.claims?.length || 0
-        } claims, ${snapshot.quotations?.length || 0} quotations.`
+        } claims, ${snapshot.quotations?.length || 0} quotations, ${
+          snapshot.valuations?.length || 0
+        } valuations.`
       );
     } catch (error) {
       await pool.query("ROLLBACK");
@@ -2271,6 +2352,7 @@ async function startServer() {
     await ensureDb();
     await maybeLoadInMemorySnapshot();
     await seedQuotationsIfEmpty(pool, nextSerialId);
+    await seedValuersIfEmpty(pool, nextSerialId);
   } catch (error) {
     const isConnectionIssue =
       dbMode === "postgres" && (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND");
@@ -2288,6 +2370,7 @@ async function startServer() {
     await ensureDb();
     await maybeLoadInMemorySnapshot();
     await seedQuotationsIfEmpty(pool, nextSerialId);
+    await seedValuersIfEmpty(pool, nextSerialId);
   }
 
   registerQuotationRoutes(app, {
@@ -2296,6 +2379,44 @@ async function startServer() {
     nextSerialId,
     onPersist: maybePersistInMemorySnapshot,
   });
+
+  registerValuationRoutes(app, {
+    pool,
+    authRequired,
+    requireRole,
+    nextSerialId,
+    onPersist: maybePersistInMemorySnapshot,
+    dbMode,
+    notifyValuationEvent: async (event, valuation) => {
+      if (!valuation) return;
+      const [officer, valuer] = await Promise.all([
+        valuation.assignedOfficerId
+          ? pool.query("SELECT email FROM users WHERE id = $1", [valuation.assignedOfficerId])
+          : { rows: [] },
+        valuation.assignedValuerId
+          ? pool.query("SELECT email FROM valuers WHERE id = $1", [valuation.assignedValuerId])
+          : { rows: [] },
+      ]);
+      await notifyValuationEvent(event, valuation, {
+        officerEmail: officer.rows[0]?.email,
+        valuerEmail: valuer.rows[0]?.email,
+      });
+    },
+  });
+
+  app.post("/api/valuations/notifications/test", authRequired, requireRole(["Admin"]), async (req, res) => {
+    try {
+      const { email } = z.object({ email: z.email() }).parse(req.body);
+      const result = await sendTestEmail(email);
+      return res.json(result);
+    } catch (err) {
+      if (err?.issues) return res.status(400).json({ message: "Invalid email" });
+      console.error(err);
+      return res.status(500).json({ message: "Failed to send test email" });
+    }
+  });
+
+  startValuationScheduler(pool);
 
   app.listen(PORT, () => {
     if (dbMode === "in-memory") {

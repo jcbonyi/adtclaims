@@ -173,9 +173,19 @@ export default function ClaimDetailPage({ mode }) {
         title={title}
         subtitle={mode === "edit" ? "Status changes and remarks are fully audited." : "Enter claim details below."}
         actions={
-          <Link to="/claims" className="adt-btn adt-btn-secondary">
-            ← Register
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {mode === "edit" && claim.claimType === "MOTOR" ? (
+              <Link
+                to={`/valuations/valuation/new?fromClaim=${id}`}
+                className="adt-btn adt-btn-primary"
+              >
+                Create Valuation
+              </Link>
+            ) : null}
+            <Link to="/claims" className="adt-btn adt-btn-secondary">
+              ← Register
+            </Link>
+          </div>
         }
       >
         <nav className="adt-breadcrumb mb-2">
