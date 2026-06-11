@@ -4,3 +4,45 @@
   font-family: var(--adt-font);
   color: var(--adt-text);
 }
+
+button.adt-kpi.adt-kpi--clickable {
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+button.adt-kpi.adt-kpi--clickable:focus-visible {
+  outline: 2px solid var(--adt-blue);
+  outline-offset: 2px;
+}
+
+button.adt-kpi.adt-kpi--clickable.adt-kpi--active {
+  border-color: var(--adt-blue);
+  box-shadow: 0 0 0 2px var(--adt-blue-light);
+}
+
+button.adt-kpi.adt-kpi--clickable:hover {
+  border-color: var(--adt-blue);
+}
+
+.adt-kpi-filter-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--adt-blue-light);
+  border: 1px solid var(--adt-border);
+  border-radius: var(--adt-radius);
+  font-size: 14px;
+}
+
+.mt-4 {
+  margin-top: 16px;
+}

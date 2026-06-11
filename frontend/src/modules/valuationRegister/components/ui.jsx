@@ -30,6 +30,7 @@ export function KpiCard({ label, value, sub, onClick, active }) {
         type="button"
         className={`adt-kpi adt-kpi--clickable${active ? " adt-kpi--active" : ""}`}
         onClick={onClick}
+        aria-label={`${label}: ${value}. Click to view details.`}
       >
         {inner}
       </button>

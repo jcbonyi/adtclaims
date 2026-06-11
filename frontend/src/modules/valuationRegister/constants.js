@@ -49,3 +49,44 @@ export function canEditValuations(role) {
 export function canManageValuers(role) {
   return role === "Admin";
 }
+
+export const COMPLETED_STATUSES = new Set(["Valuation Report Received", "Closed"]);
+export const SCHEDULED_STATUSES = new Set(["Appointment Scheduled", "Awaiting Inspection"]);
+
+export const KPI_FILTER_LABELS = {
+  total_requiring: "Requiring valuation",
+  pending: "Pending",
+  scheduled: "Scheduled",
+  completed: "Completed",
+  overdue: "Overdue",
+  value_increased: "Value increased",
+  value_decreased: "Value decreased",
+};
+
+export function filterValuationsByKpi(valuations, kpi) {
+  if (!kpi || kpi === "total_requiring") {
+    return valuations.filter((v) => v.requiresValuation !== false);
+  }
+  switch (kpi) {
+    case "pending":
+      return valuations.filter(
+        (v) =>
+          !COMPLETED_STATUSES.has(v.status) &&
+          !SCHEDULED_STATUSES.has(v.status) &&
+          v.status !== "Overdue" &&
+          !v.isOverdue
+      );
+    case "scheduled":
+      return valuations.filter((v) => SCHEDULED_STATUSES.has(v.status));
+    case "completed":
+      return valuations.filter((v) => COMPLETED_STATUSES.has(v.status));
+    case "overdue":
+      return valuations.filter((v) => v.isOverdue || v.status === "Overdue");
+    case "value_increased":
+      return valuations.filter((v) => (v.valueDifference ?? 0) > 0);
+    case "value_decreased":
+      return valuations.filter((v) => (v.valueDifference ?? 0) < 0);
+    default:
+      return valuations;
+  }
+}

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { useValuations } from "../context/useValuations";
 import {
@@ -8,7 +8,14 @@ import {
   downloadValuationsTemplate,
   importValuationsExcel,
 } from "../api/valuationsApi";
-import { VALUATION_STATUSES, canEditValuations, canManageValuers } from "../constants";
+import { valuationPath } from "../basePath";
+import {
+  KPI_FILTER_LABELS,
+  VALUATION_STATUSES,
+  canEditValuations,
+  canManageValuers,
+  filterValuationsByKpi,
+} from "../constants";
 import { StatusBadge } from "./StatusBadge";
 import { Button, EmptyState, PageHeader } from "./ui";
 
@@ -17,6 +24,7 @@ export function Register({ onView, onCreate }) {
   const { state, reloadFromServer } = useValuations();
   const importRef = useRef(null);
   const [searchParams] = useSearchParams();
+  const kpiFilter = searchParams.get("kpi") || "";
   const [filters, setFilters] = useState({
     q: searchParams.get("q") || "",
     status: "",
@@ -40,7 +48,10 @@ export function Register({ onView, onCreate }) {
   );
 
   const rows = useMemo(() => {
-    return state.valuations.filter((v) => {
+    const kpiScoped = kpiFilter
+      ? filterValuationsByKpi(state.valuations, kpiFilter)
+      : state.valuations;
+    return kpiScoped.filter((v) => {
       if (filters.status && v.status !== filters.status) return false;
       if (filters.insurer && !v.insuranceCompany?.toLowerCase().includes(filters.insurer.toLowerCase())) return false;
       if (filters.valuerId && String(v.assignedValuerId) !== filters.valuerId) return false;
@@ -51,7 +62,9 @@ export function Register({ onView, onCreate }) {
       }
       return true;
     });
-  }, [state.valuations, filters]);
+  }, [state.valuations, filters, kpiFilter]);
+
+  const kpiLabel = KPI_FILTER_LABELS[kpiFilter];
 
   async function handleExportExcel() {
     setExporting(true);
@@ -120,7 +133,11 @@ export function Register({ onView, onCreate }) {
     <>
       <PageHeader
         title="Valuation Register"
-        subtitle={`Showing ${rows.length} of ${state.valuations.length} valuations.`}
+        subtitle={
+          kpiLabel
+            ? `${kpiLabel} — showing ${rows.length} record${rows.length === 1 ? "" : "s"}`
+            : `Showing ${rows.length} of ${state.valuations.length} valuations.`
+        }
         actions={
           <>
             <Button tone="primary" onClick={handleExportExcel} disabled={exporting}>
@@ -154,6 +171,17 @@ export function Register({ onView, onCreate }) {
           </>
         }
       />
+
+      {kpiLabel ? (
+        <div className="adt-kpi-filter-banner">
+          <span>
+            Dashboard filter: <strong>{kpiLabel}</strong>
+          </span>
+          <Link to={valuationPath("register")} className="adt-link-btn">
+            Clear filter
+          </Link>
+        </div>
+      ) : null}
 
       {clearResult ? (
         <div
