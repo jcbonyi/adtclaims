@@ -3,11 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { useValuations } from "../context/useValuations";
 import {
+  clearValuationRegister,
   downloadValuationsExcel,
   downloadValuationsTemplate,
   importValuationsExcel,
 } from "../api/valuationsApi";
-import { VALUATION_STATUSES, canEditValuations } from "../constants";
+import { VALUATION_STATUSES, canEditValuations, canManageValuers } from "../constants";
 import { StatusBadge } from "./StatusBadge";
 import { Button, EmptyState, PageHeader } from "./ui";
 
@@ -24,7 +25,9 @@ export function Register({ onView, onCreate }) {
   });
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [clearResult, setClearResult] = useState(null);
 
   const exportParams = useMemo(
     () => ({
@@ -71,10 +74,35 @@ export function Register({ onView, onCreate }) {
     }
   }
 
+  async function handleClearRegister() {
+    if (!canManageValuers(user?.role)) return;
+    const confirmed = window.confirm(
+      `Clear the entire valuation register?\n\nThis will permanently delete all ${state.valuations.length} valuation(s), follow-ups, and history. Valuers will be kept.\n\nUse this before a fresh Excel import if you have duplicate entries.`
+    );
+    if (!confirmed) return;
+    const typed = window.prompt('Type CLEAR to confirm deletion of all valuations:');
+    if (typed?.trim().toUpperCase() !== "CLEAR") return;
+
+    setClearing(true);
+    setClearResult(null);
+    setImportResult(null);
+    try {
+      const result = await clearValuationRegister();
+      setClearResult(result);
+      await reloadFromServer();
+    } catch (err) {
+      console.error(err);
+      window.alert(err.response?.data?.message || "Failed to clear register.");
+    } finally {
+      setClearing(false);
+    }
+  }
+
   async function handleImportFile(file) {
     if (!file || !canEditValuations(user?.role)) return;
     setImporting(true);
     setImportResult(null);
+    setClearResult(null);
     try {
       const result = await importValuationsExcel(file);
       setImportResult(result);
@@ -118,9 +146,25 @@ export function Register({ onView, onCreate }) {
                 </Button>
               </>
             ) : null}
+            {canManageValuers(user?.role) ? (
+              <Button tone="danger" onClick={handleClearRegister} disabled={clearing || state.valuations.length === 0}>
+                {clearing ? "Clearing…" : "Clear Register"}
+              </Button>
+            ) : null}
           </>
         }
       />
+
+      {clearResult ? (
+        <div
+          className="adt-card"
+          style={{ marginBottom: 16, padding: 12, background: "#EFF6FF", border: "1px solid #3B82F6" }}
+        >
+          <p style={{ margin: 0 }}>
+            Register cleared — removed <strong>{clearResult.deleted ?? 0}</strong> valuation(s). You can import your Excel file now.
+          </p>
+        </div>
+      ) : null}
 
       {importResult ? (
         <div

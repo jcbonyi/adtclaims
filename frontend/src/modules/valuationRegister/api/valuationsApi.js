@@ -122,3 +122,8 @@ export async function importValuationsExcel(file) {
   });
   return res.data;
 }
+
+export async function clearValuationRegister() {
+  const res = await client.post("/valuations/clear-register");
+  return res.data;
+}
