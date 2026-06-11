@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "test": "echo \"No tests configured\""
+    "test": "echo \"No tests configured\"",
+    "clear-valuations": "node scripts/clearValuationRegister.js"
   },
   "keywords": [],
   "author": "",

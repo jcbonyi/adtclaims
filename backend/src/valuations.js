@@ -467,6 +467,14 @@ async function seedValuersIfEmpty(pool, nextSerialId) {
   await ensureDefaultValuers(pool, nextSerialId);
 }
 
+async function clearValuationRegister(pool) {
+  await pool.query("DELETE FROM valuation_audit_logs");
+  await pool.query("DELETE FROM valuation_status_history");
+  await pool.query("DELETE FROM valuation_follow_ups");
+  const result = await pool.query("DELETE FROM valuations RETURNING id");
+  return { deleted: result.rowCount };
+}
+
 async function fetchValuationsList(pool, query = {}) {
   const settings = await getSettings(pool);
   await recomputeComplianceFlags(pool, settings);
@@ -964,6 +972,22 @@ function registerValuationRoutes(app, deps) {
     }
   });
 
+  app.post(
+    "/api/valuations/clear-register",
+    authRequired,
+    requireRole(["Admin"]),
+    async (_, res) => {
+      try {
+        const { deleted } = await clearValuationRegister(pool);
+        await onPersist?.();
+        return res.json({ ok: true, deleted });
+      } catch (err) {
+        console.error(err);
+        return res.status(500).json({ message: "Failed to clear valuation register" });
+      }
+    }
+  );
+
   if (upload) {
     app.post(
       "/api/valuations/import-excel",
@@ -1334,6 +1358,7 @@ module.exports = {
   ensureValuationsTables,
   seedValuersIfEmpty,
   ensureDefaultValuers,
+  clearValuationRegister,
   registerValuationRoutes,
   recomputeComplianceFlags,
   fetchValuationsList,
