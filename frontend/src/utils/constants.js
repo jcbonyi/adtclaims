@@ -84,6 +84,7 @@ export const CLAIM_STATUS_GROUPS = [
       "Litigation",
       "Court Matter Pending",
       "Court Award Issued",
+      "Settled out of Court",
     ],
   },
   {
