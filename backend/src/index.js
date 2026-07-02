@@ -1987,7 +1987,8 @@ async function fetchFilteredClaimsForExport(query) {
         id, insurer, claim_type, cover_type, insured_name, registration_number,
         accident_date, reported_to_broker_date, reported_to_insurer_date, assessed_date,
         claim_status, claim_status_other, date_ra_issued, date_vehicle_released,
-        vehicle_value, repair_estimate, garage, closure_date
+        vehicle_value, repair_estimate, garage, closure_date,
+        non_motor_category, pending_docs_received, pending_docs_other, wiba_fatal_injury
       FROM claims
       ${whereClause}
       ORDER BY ${safeSortField} ${safeSortOrder}
