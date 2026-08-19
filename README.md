@@ -10,6 +10,7 @@ Full-stack web application for managing insurance claims across insurers and cla
 
 ## Core Features Implemented
 
+- **Policy Renewals** module (`/renewals`) — ingest policies from Excel (Insured Name, Contacts, Policy Renewal, Car Registration Details, Financial Interest), normalize Kenyan phones to `+254`, send SMS/email at T-60 / T-30 / T-15, notify financiers when financial interest is populated, log every send, dashboard + daily digest for delivery failures
 - **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, **Excel import/export** (template download, filtered export), CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
 - Claims register with filters, pagination, sorting, global search, row aging color cues, inline status update, and quick remark add
 - Claim detail form for create/edit with append-only remarks and status transition history
@@ -179,6 +180,20 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 - `GET /api/dashboard/operations`
 - `POST /api/claims/import-excel` import register from Excel
 - `GET /api/claims-export.xlsx` export claims as a styled Excel workbook (ADT branding; same filters as the register)
+- `GET /api/renewals` list renewal policies
+- `POST /api/renewals/import-excel` import the Excel register (phone → +254)
+- `POST /api/renewals/run-reminders` admin: run T-60/T-30/T-15 SMS+email job
+- `GET /api/renewals/notifications?unacked=true` open delivery failures
+- `GET /api/renewals/dashboard` renewal KPIs and failure alerts
+
+## Policy renewals (SMS + email)
+
+Configure in `backend/.env`:
+
+- **Email:** `SMTP_*` plus `RENEWAL_OPS_EMAIL_LIST` (daily failure digest; also editable in Renewals → Settings)
+- **SMS:** Africa's Talking — `AFRICASTALKING_USERNAME`, `AFRICASTALKING_API_KEY`, optional `AFRICASTALKING_SENDER`. Set `AFRICASTALKING_SANDBOX=true` for the sandbox API.
+- The reminder job runs daily at **07:30**. Admins can also run it from Renewals → Settings.
+- Contacts without a country code (e.g. `722111333`) are stored as `+254722111333`. Multiple vehicle regs may be separated with `&`. Financial interest values other than `N/A` also notify the matching financier (add phone/email under Renewals → Financiers).
 
 ## Suggested Next Steps (Phase 2)
 

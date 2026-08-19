@@ -38,6 +38,16 @@ const { ROLES, ROLE_SQL_LIST } = require("./permissions");
 const { notifyValuationEvent, sendTestEmail } = require("./notificationService");
 const { startValuationScheduler } = require("./valuationScheduler");
 const {
+  ensureRenewalsTables,
+  seedRenewalsIfEmpty,
+  registerRenewalRoutes,
+  POLICY_SNAPSHOT_COLUMNS,
+  FINANCIER_SNAPSHOT_COLUMNS,
+  LOG_SNAPSHOT_COLUMNS,
+  SETTINGS_SNAPSHOT_COLUMNS: RENEWAL_SETTINGS_SNAPSHOT_COLUMNS,
+} = require("./renewals");
+const { startRenewalScheduler } = require("./renewalScheduler");
+const {
   CLAIM_STATUS_GROUPS,
   CLAIM_STATUSES,
   CLOSED_STATUS_LIST,
@@ -340,6 +350,7 @@ async function ensureDb() {
 
   await ensureQuotationsTable(pool);
   await ensureValuationsTables(pool);
+  await ensureRenewalsTables(pool);
 
   try {
     await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
@@ -518,6 +529,10 @@ async function maybePersistInMemorySnapshot() {
         valuationStatusHistory,
         valuationAuditLogs,
         valuationSettings,
+        renewalPolicies,
+        renewalFinanciers,
+        renewalNotificationLogs,
+        renewalSettings,
       ] = await Promise.all([
         pool.query("SELECT * FROM users ORDER BY id ASC"),
         pool.query("SELECT * FROM claims ORDER BY id ASC"),
@@ -531,6 +546,10 @@ async function maybePersistInMemorySnapshot() {
         pool.query("SELECT * FROM valuation_status_history ORDER BY id ASC"),
         pool.query("SELECT * FROM valuation_audit_logs ORDER BY id ASC"),
         pool.query("SELECT * FROM valuation_settings ORDER BY id ASC"),
+        pool.query("SELECT * FROM renewal_policies ORDER BY id ASC"),
+        pool.query("SELECT * FROM renewal_financiers ORDER BY id ASC"),
+        pool.query("SELECT * FROM renewal_notification_logs ORDER BY id ASC"),
+        pool.query("SELECT * FROM renewal_settings ORDER BY id ASC"),
       ]);
 
       const snapshot = {
@@ -548,6 +567,10 @@ async function maybePersistInMemorySnapshot() {
         valuationStatusHistory: valuationStatusHistory.rows,
         valuationAuditLogs: valuationAuditLogs.rows,
         valuationSettings: valuationSettings.rows,
+        renewalPolicies: renewalPolicies.rows,
+        renewalFinanciers: renewalFinanciers.rows,
+        renewalNotificationLogs: renewalNotificationLogs.rows,
+        renewalSettings: renewalSettings.rows,
       };
 
       await fs.mkdir(path.dirname(SNAPSHOT_FILE_PATH), { recursive: true });
@@ -592,6 +615,10 @@ async function maybeLoadInMemorySnapshot() {
 
     await pool.query("BEGIN");
     try {
+      await pool.query("DELETE FROM renewal_notification_logs");
+      await pool.query("DELETE FROM renewal_policies");
+      await pool.query("DELETE FROM renewal_financiers");
+      await pool.query("DELETE FROM renewal_settings");
       await pool.query("DELETE FROM valuation_audit_logs");
       await pool.query("DELETE FROM valuation_status_history");
       await pool.query("DELETE FROM valuation_follow_ups");
@@ -718,6 +745,26 @@ async function maybeLoadInMemorySnapshot() {
         SETTINGS_SNAPSHOT_COLUMNS,
         snapshot.valuationSettings || []
       );
+      await restoreSnapshotRows(
+        "renewal_financiers",
+        FINANCIER_SNAPSHOT_COLUMNS,
+        snapshot.renewalFinanciers || []
+      );
+      await restoreSnapshotRows(
+        "renewal_policies",
+        POLICY_SNAPSHOT_COLUMNS,
+        snapshot.renewalPolicies || []
+      );
+      await restoreSnapshotRows(
+        "renewal_notification_logs",
+        LOG_SNAPSHOT_COLUMNS,
+        snapshot.renewalNotificationLogs || []
+      );
+      await restoreSnapshotRows(
+        "renewal_settings",
+        RENEWAL_SETTINGS_SNAPSHOT_COLUMNS,
+        snapshot.renewalSettings || []
+      );
 
       await pool.query("COMMIT");
 
@@ -726,7 +773,7 @@ async function maybeLoadInMemorySnapshot() {
           snapshot.claims?.length || 0
         } claims, ${snapshot.quotations?.length || 0} quotations, ${
           snapshot.valuations?.length || 0
-        } valuations.`
+        } valuations, ${snapshot.renewalPolicies?.length || 0} renewal policies.`
       );
     } catch (error) {
       await pool.query("ROLLBACK");
@@ -2354,6 +2401,7 @@ async function startServer() {
     await maybeLoadInMemorySnapshot();
     await seedQuotationsIfEmpty(pool, nextSerialId);
     await seedValuersIfEmpty(pool, nextSerialId);
+    await seedRenewalsIfEmpty(pool, nextSerialId);
   } catch (error) {
     const isConnectionIssue =
       dbMode === "postgres" && (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND");
@@ -2372,6 +2420,7 @@ async function startServer() {
     await maybeLoadInMemorySnapshot();
     await seedQuotationsIfEmpty(pool, nextSerialId);
     await seedValuersIfEmpty(pool, nextSerialId);
+    await seedRenewalsIfEmpty(pool, nextSerialId);
   }
 
   registerQuotationRoutes(app, {
@@ -2419,6 +2468,22 @@ async function startServer() {
   });
 
   startValuationScheduler(pool);
+
+  registerRenewalRoutes(app, {
+    pool,
+    authRequired,
+    requireRole,
+    nextSerialId,
+    onPersist: maybePersistInMemorySnapshot,
+    dbMode,
+    upload,
+  });
+
+  startRenewalScheduler(pool, {
+    nextSerialId,
+    dbMode,
+    onPersist: maybePersistInMemorySnapshot,
+  });
 
   app.listen(PORT, () => {
     if (dbMode === "in-memory") {

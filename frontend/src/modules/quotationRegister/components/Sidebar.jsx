@@ -68,6 +68,12 @@ export function Sidebar() {
         <Link to="/claims" className="adt-nav-link" style={{ marginBottom: 8 }}>
           ← Claims Tracker
         </Link>
+        <Link to="/valuations" className="adt-nav-link" style={{ marginBottom: 8 }}>
+          Motor Valuations
+        </Link>
+        <Link to="/renewals" className="adt-nav-link" style={{ marginBottom: 8 }}>
+          Renewals
+        </Link>
         Internal use · 2026
       </div>
     </aside>

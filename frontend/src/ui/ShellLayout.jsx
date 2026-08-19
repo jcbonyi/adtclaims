@@ -10,7 +10,8 @@ export default function ShellLayout() {
   const location = useLocation();
   const isQuotations = location.pathname.startsWith("/quotations");
   const isValuations = location.pathname.startsWith("/valuations");
-  const isClaimsModule = !isQuotations && !isValuations;
+  const isRenewals = location.pathname.startsWith("/renewals");
+  const isClaimsModule = !isQuotations && !isValuations && !isRenewals;
 
   if (user?.mustChangePassword && location.pathname !== "/change-password") {
     return <Navigate to="/change-password" replace />;
@@ -62,6 +63,12 @@ export default function ShellLayout() {
             >
               Motor Valuations
             </NavLink>
+            <NavLink
+              to="/renewals"
+              className={() => `adt-module-tab${isRenewals ? " adt-module-tab--active" : ""}`}
+            >
+              Renewals
+            </NavLink>
           </div>
           {isClaimsModule ? (
             <nav className="adt-subnav mt-3" aria-label="Claims navigation">
@@ -82,7 +89,8 @@ export default function ShellLayout() {
             </nav>
           ) : (
             <p className="mt-2 text-sm text-slate-500">
-              Use the sidebar inside {isValuations ? "Motor Valuations" : "Quotation Register"} to navigate.
+              Use the sidebar inside{" "}
+              {isValuations ? "Motor Valuations" : isRenewals ? "Renewals" : "Quotation Register"} to navigate.
             </p>
           )}
         </div>

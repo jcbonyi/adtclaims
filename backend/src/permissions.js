@@ -22,6 +22,14 @@ function canManageUsers(role) {
   return role === "Admin";
 }
 
+function canEditRenewals(role) {
+  return ["Admin", "Claims Officer", "Operations Team"].includes(role);
+}
+
+function canManageRenewalSettings(role) {
+  return role === "Admin";
+}
+
 function requirePermission(checkFn) {
   return (req, res, next) => {
     if (!checkFn(req.user?.role)) {
@@ -39,5 +47,7 @@ module.exports = {
   canViewValuationReports,
   canManageValuers,
   canManageUsers,
+  canEditRenewals,
+  canManageRenewalSettings,
   requirePermission,
 };

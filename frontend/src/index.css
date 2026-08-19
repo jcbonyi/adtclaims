@@ -53,6 +53,7 @@ body {
 
 .adt-module-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   border-radius: 10px;

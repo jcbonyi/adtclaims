@@ -1,0 +1,101 @@
+@import "../valuationRegister/valuationRegister.css";
+
+.renewals-module-root {
+  font-family: var(--adt-font);
+  color: var(--adt-text);
+}
+
+.rn-days {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.rn-days--ok {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #10b981;
+}
+
+.rn-days--info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #3b82f6;
+}
+
+.rn-days--warn {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #f97316;
+}
+
+.rn-days--danger {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #dc2626;
+}
+
+.rn-days--neutral {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #94a3b8;
+}
+
+.rn-fail-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rn-muted {
+  color: var(--adt-muted);
+  font-size: 13px;
+}
+
+.rn-channel {
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.rn-config-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.rn-pill {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--adt-border);
+  background: #fff;
+}
+
+.rn-pill--ok {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+}
+
+.rn-pill--warn {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+.adt-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  width: 100%;
+}

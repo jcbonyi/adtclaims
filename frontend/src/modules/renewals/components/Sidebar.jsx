@@ -1,9 +1,7 @@
-import { useMemo } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
-import { valuationPath } from "../basePath";
-import { FOLLOW_UP_STATUSES, canManageValuers } from "../constants";
-import { useValuations } from "../context/useValuations";
+import { renewalsPath } from "../basePath";
+import { canManageRenewalSettings } from "../constants";
 
 function IconChart() {
   return (
@@ -21,6 +19,14 @@ function IconTable() {
   );
 }
 
+function IconAlert() {
+  return (
+    <svg className="val-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+    </svg>
+  );
+}
+
 function IconBell() {
   return (
     <svg className="val-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -29,58 +35,50 @@ function IconBell() {
   );
 }
 
-function IconReport() {
+function IconBank() {
   return (
     <svg className="val-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z" />
+      <path d="M4 10v7h3v-7H4zm6.5 0v7h3v-7h-3zM2 19v2h20v-2H2zM17 10v7h3v-7h-3zM12 1L2 6v2h20V6L12 1z" />
     </svg>
   );
 }
 
-function IconUsers() {
+function IconCog() {
   return (
     <svg className="val-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+      <path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.63-.94l-.36-2.54A.5.5 0 0014.9 2h-3.8a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 00-.6.22L3.8 8.48a.5.5 0 00.12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L3.92 14.16a.5.5 0 00-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.26.42.5.42h3.8c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.24.1.51 0 .64-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z" />
     </svg>
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ failureCount = 0 }) {
   const { user } = useAuth();
-  const { state } = useValuations();
-
-  const followUpCount = useMemo(
-    () =>
-      state.valuations.filter((v) => FOLLOW_UP_STATUSES.has(v.status) || v.isOverdue).length,
-    [state.valuations]
-  );
 
   const items = [
-    { to: valuationPath("dashboard"), label: "Dashboard", Icon: IconChart },
-    { to: valuationPath("register"), label: "Valuation Register", Icon: IconTable },
-    { to: valuationPath("followup"), label: "Follow-Up", Icon: IconBell, badge: followUpCount },
-    { to: valuationPath("analytics"), label: "Analytics", Icon: IconReport },
+    { to: renewalsPath("dashboard"), label: "Dashboard", Icon: IconChart },
+    { to: renewalsPath("register"), label: "Policy Register", Icon: IconTable },
+    { to: renewalsPath("failures"), label: "Delivery Failures", Icon: IconAlert, badge: failureCount },
+    { to: renewalsPath("log"), label: "Send Log", Icon: IconBell },
+    { to: renewalsPath("financiers"), label: "Financiers", Icon: IconBank },
   ];
-  if (canManageValuers(user?.role)) {
-    items.push({ to: valuationPath("valuers"), label: "Valuers", Icon: IconUsers });
+  if (canManageRenewalSettings(user?.role)) {
+    items.push({ to: renewalsPath("settings"), label: "Settings", Icon: IconCog });
   }
 
   return (
     <aside className="adt-sidebar">
       <div className="adt-sidebar-brand">
-        <div className="adt-sidebar-app-name">Motor Valuations</div>
+        <div className="adt-sidebar-app-name">Renewals</div>
         <div style={{ fontSize: 12, color: "var(--adt-muted)", marginTop: 4 }}>
-          2-day report turnaround
+          T-60 · T-30 · T-15 reminders
         </div>
       </div>
-      <nav className="adt-sidebar-nav" aria-label="Valuation navigation">
+      <nav className="adt-sidebar-nav" aria-label="Renewals navigation">
         {items.map(({ to, label, Icon, badge }) => (
           <NavLink
             key={to}
             to={to}
-            className={({ isActive }) =>
-              `adt-nav-link${isActive ? " adt-nav-link--active" : ""}`
-            }
+            className={({ isActive }) => `adt-nav-link${isActive ? " adt-nav-link--active" : ""}`}
           >
             <Icon />
             <span>{label}</span>
@@ -95,8 +93,8 @@ export function Sidebar() {
         <Link to="/quotations" className="adt-nav-link" style={{ marginBottom: 8 }}>
           Quotation Register
         </Link>
-        <Link to="/renewals" className="adt-nav-link" style={{ marginBottom: 8 }}>
-          Renewals
+        <Link to="/valuations" className="adt-nav-link" style={{ marginBottom: 8 }}>
+          Motor Valuations
         </Link>
         Internal use · 2026
       </div>
