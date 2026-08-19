@@ -8,7 +8,7 @@ import {
   importRenewalsExcel,
 } from "../api/renewalsApi";
 import { renewalsPath } from "../basePath";
-import { canEditRenewals, canManageRenewalSettings, daysUntilLabel, daysUntilTone, KPI_FILTER_LABELS, POLICY_STATUSES } from "../constants";
+import { canEditRenewals, canManageRenewalSettings, daysUntilLabel, daysUntilTone, isDayCount, KPI_FILTER_LABELS, POLICY_STATUSES } from "../constants";
 import { formatDisplayDate } from "../../valuationRegister/utils/format";
 import { StatusBadge } from "./StatusBadge";
 import { AlertBanner, Button, Card, EmptyState, FilterBar, PageHeader } from "./ui";
@@ -34,10 +34,11 @@ export function Register({ policies, onView, onCreate, onReload }) {
   const rows = useMemo(() => {
     return policies.filter((p) => {
       if (filters.status && p.status !== filters.status) return false;
-      if (windowFilter === "t60" && !(p.status === "Active" && p.daysUntilRenewal > 30 && p.daysUntilRenewal <= 60)) return false;
-      if (windowFilter === "t30" && !(p.status === "Active" && p.daysUntilRenewal > 15 && p.daysUntilRenewal <= 30)) return false;
-      if (windowFilter === "t15" && !(p.status === "Active" && p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 15)) return false;
-      if (windowFilter === "overdue" && !(p.status === "Active" && p.daysUntilRenewal < 0)) return false;
+      if (windowFilter === "t60" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 30 && p.daysUntilRenewal <= 60)) return false;
+      if (windowFilter === "t30" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 15 && p.daysUntilRenewal <= 30)) return false;
+      if (windowFilter === "t15" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 15)) return false;
+      if (windowFilter === "later" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 60)) return false;
+      if (windowFilter === "overdue" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal < 0)) return false;
       if (deferredQ) {
         const q = deferredQ.toLowerCase();
         const hay = `${p.insuredName} ${p.carRegistrations} ${p.phoneRaw} ${p.phoneE164} ${p.financialInterest} ${p.insurer}`.toLowerCase();

@@ -27,6 +27,7 @@ export function Dashboard({ onOpenPolicy }) {
     { label: "T-60", value: kpis.t60 },
     { label: "T-30", value: kpis.t30 },
     { label: "T-15", value: kpis.t15 },
+    { label: "61+", value: kpis.later ?? 0 },
     { label: "Overdue", value: kpis.overdue },
   ];
 
@@ -66,6 +67,7 @@ export function Dashboard({ onOpenPolicy }) {
         <KpiCard label="Due 31–60 days" value={kpis.t60} onClick={() => navigate(renewalsPath("register?window=t60"))} />
         <KpiCard label="Due 16–30 days" value={kpis.t30} onClick={() => navigate(renewalsPath("register?window=t30"))} />
         <KpiCard label="Due 0–15 days" value={kpis.t15} onClick={() => navigate(renewalsPath("register?window=t15"))} />
+        <KpiCard label="Due 61+ days" value={kpis.later ?? 0} onClick={() => navigate(renewalsPath("register?window=later"))} />
         <KpiCard label="Overdue" value={kpis.overdue} onClick={() => navigate(renewalsPath("register?window=overdue"))} />
         <KpiCard
           label="Open failures"

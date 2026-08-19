@@ -26,8 +26,13 @@ export const KPI_FILTER_LABELS = {
   t60: "Due in 31–60 days",
   t30: "Due in 16–30 days",
   t15: "Due in 0–15 days",
+  later: "Due in 61+ days",
   overdue: "Overdue / expired",
 };
+
+export function isDayCount(value) {
+  return Number.isFinite(value);
+}
 
 export function daysUntilTone(days) {
   if (days == null) return "neutral";

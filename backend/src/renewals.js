@@ -99,13 +99,41 @@ function todayNairobi() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Nairobi" });
 }
 
+/** Calendar YYYY-MM-DD from a DATE column, Date object, or ISO string. */
+function toDateOnly(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(value.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const raw = String(value).trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const y = parsed.getUTCFullYear();
+  const m = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function daysUntilRenewal(renewalDate, today = todayNairobi()) {
-  if (!renewalDate) return null;
-  const start = new Date(`${today}T00:00:00Z`);
-  const iso = String(renewalDate).slice(0, 10);
-  const end = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-  return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  const iso = toDateOnly(renewalDate);
+  const todayIso = toDateOnly(today);
+  if (!iso || !todayIso) return null;
+  const start = Date.UTC(
+    Number(todayIso.slice(0, 4)),
+    Number(todayIso.slice(5, 7)) - 1,
+    Number(todayIso.slice(8, 10))
+  );
+  const end = Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+  return Math.round((end - start) / (1000 * 60 * 60 * 24));
+}
+
+function isDayCount(value) {
+  return Number.isFinite(value);
 }
 
 function normalizeKenyaPhone(raw) {
@@ -158,7 +186,7 @@ function rowToPolicy(row, today = todayNairobi()) {
     email: row.email || "",
     policyNumber: row.policy_number || "",
     insurer: row.insurer || "",
-    renewalDate: row.renewal_date,
+    renewalDate: toDateOnly(row.renewal_date),
     carRegistrations: row.car_registrations || "",
     vehicles: splitRegistrations(row.car_registrations),
     financialInterest: row.financial_interest || "",
@@ -189,7 +217,7 @@ function rowToLog(row) {
     acknowledgedAt: row.acknowledged_at,
     acknowledgedBy: row.acknowledged_by,
     createdAt: row.created_at,
-    renewalDate: row.renewal_date || null,
+    renewalDate: toDateOnly(row.renewal_date) || null,
     carRegistrations: row.car_registrations || "",
   };
 }
@@ -707,6 +735,8 @@ function filterByWindow(policy, window) {
       return policy.status === "Active" && days === 0;
     case "overdue":
       return policy.status === "Active" && days < 0;
+    case "later":
+      return policy.status === "Active" && days > 60;
     case "failed":
       return true;
     default:
@@ -719,10 +749,14 @@ async function fetchDashboard(pool) {
   const active = policies.filter((p) => p.status === "Active");
   const kpis = {
     total_active: active.length,
-    t60: active.filter((p) => p.daysUntilRenewal > 30 && p.daysUntilRenewal <= 60).length,
-    t30: active.filter((p) => p.daysUntilRenewal > 15 && p.daysUntilRenewal <= 30).length,
-    t15: active.filter((p) => p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 15).length,
-    overdue: active.filter((p) => p.daysUntilRenewal < 0).length,
+    t60: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 30 && p.daysUntilRenewal <= 60)
+      .length,
+    t30: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 15 && p.daysUntilRenewal <= 30)
+      .length,
+    t15: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 15)
+      .length,
+    later: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 60).length,
+    overdue: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal < 0).length,
     with_financier: active.filter((p) => p.financierNames.length > 0).length,
   };
 
@@ -750,7 +784,10 @@ async function fetchDashboard(pool) {
   `);
 
   const upcoming = active
-    .filter((p) => p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 60)
+    .filter(
+      (p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 60
+    )
+    .sort((a, b) => a.daysUntilRenewal - b.daysUntilRenewal)
     .slice(0, 20);
 
   const settings = await getSettings(pool);
@@ -758,7 +795,10 @@ async function fetchDashboard(pool) {
   return {
     kpis,
     upcoming,
-    overdue: active.filter((p) => p.daysUntilRenewal < 0).slice(0, 20),
+    overdue: active
+      .filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal < 0)
+      .sort((a, b) => a.daysUntilRenewal - b.daysUntilRenewal)
+      .slice(0, 20),
     failures: failures.rows.map(rowToLog),
     channelStats: stats.rows.map((r) => ({
       channel: r.channel,
@@ -1292,5 +1332,6 @@ module.exports = {
   parseFinancierNames,
   hasFinancialInterest,
   daysUntilRenewal,
+  toDateOnly,
   todayNairobi,
 };
