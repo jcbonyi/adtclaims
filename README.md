@@ -10,7 +10,7 @@ Full-stack web application for managing insurance claims across insurers and cla
 
 ## Core Features Implemented
 
-- **Policy Renewals** module (`/renewals`) — ingest policies from Excel (Insured Name, Contacts, Policy Renewal, Car Registration Details, Financial Interest), normalize Kenyan phones to `+254`, send SMS/email at T-60 / T-30 / T-15, notify financiers when financial interest is populated, log every send, dashboard + daily digest for delivery failures
+- **Policy Renewals** module (`/renewals`) — Excel ingest (upsert + preview), T-60/30/15/7/1 SMS + email + WhatsApp, pipeline/RM ownership, financier auto-create, inbound STOP/RENEWED, attachments, client 360, monthly production report
 - **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, **Excel import/export** (template download, filtered export), CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
 - Claims register with filters, pagination, sorting, global search, row aging color cues, inline status update, and quick remark add
 - Claim detail form for create/edit with append-only remarks and status transition history
@@ -182,9 +182,14 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 - `GET /api/claims-export.xlsx` export claims as a styled Excel workbook (ADT branding; same filters as the register)
 - `GET /api/renewals` list renewal policies
 - `POST /api/renewals/import-excel` import the Excel register (phone → +254)
-- `POST /api/renewals/run-reminders` admin: run T-60/T-30/T-15 SMS+email job
+- `POST /api/renewals/run-reminders` admin: run T-60/T-30/T-15/T-7/T-1 SMS+email+WhatsApp job
 - `GET /api/renewals/notifications?unacked=true` open delivery failures
 - `GET /api/renewals/dashboard` renewal KPIs and failure alerts
+- `GET /api/renewals/reports/monthly` production report (renewed / lapsed / open)
+- `GET /api/renewals/client-360?q=` claims + quotations + valuations + renewals
+- `POST /api/renewals/:id/roll` mark renewed and add 12 months
+- `POST /api/renewals/webhooks/africastalking` inbound STOP / RENEWED SMS
+- `POST /api/renewals/webhooks/dlr` Africa's Talking delivery receipts
 
 ## Policy renewals (SMS + email)
 
@@ -192,12 +197,13 @@ Configure in `backend/.env`:
 
 - **Email:** `SMTP_*` plus `RENEWAL_OPS_EMAIL_LIST` (daily failure digest; also editable in Renewals → Settings)
 - **SMS:** Africa's Talking — `AFRICASTALKING_USERNAME`, `AFRICASTALKING_API_KEY`, optional `AFRICASTALKING_SENDER`. Set `AFRICASTALKING_SANDBOX=true` for the sandbox API.
-- The reminder job runs daily at **07:30**. Admins can also run it from Renewals → Settings.
-- Contacts without a country code (e.g. `722111333`) are stored as `+254722111333`. Multiple vehicle regs may be separated with `&`. Financial interest values other than `N/A` also notify the matching financier (add phone/email under Renewals → Financiers).
+- **WhatsApp:** `AFRICASTALKING_WHATSAPP_FROM` (AT) or `WHATSAPP_PHONE_ID` + `WHATSAPP_TOKEN` (Meta Cloud API). Enable the channel in Renewals → Settings.
+- **Inbound SMS / DLR:** point Africa's Talking callbacks to `POST /api/renewals/webhooks/africastalking` and `POST /api/renewals/webhooks/dlr`. Optional `RENEWAL_WEBHOOK_SECRET`.
+- The reminder job runs daily at **08:00 EAT**, only during quiet hours (default 08:00–18:00). Admins can also run it from Renewals → Settings (force overrides quiet hours).
+- Contacts without a country code (e.g. `722111333`) are stored as `+254722111333`. Multiple vehicle regs may be separated with `&`. Financial interest values other than `N/A` also notify the matching financier (stubs are auto-created from import; add phone/email under Renewals → Financiers).
+- Re-importing the same insured name + vehicle regs + renewal date **updates** the existing row. Import shows a preview before commit.
 
-## Suggested Next Steps (Phase 2)
+## Suggested Next Steps
 
-- Add file attachments (documents/photos)
-- Add scheduler for 14-day/30-day escalation notifications (email/SMS)
-- Add richer role-based data visibility controls
 - Add automated tests (API + UI smoke tests)
+- Tighten module-level visibility if some roles should not see Claims or Quotations at all

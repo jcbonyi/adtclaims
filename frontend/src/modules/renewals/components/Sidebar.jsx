@@ -57,6 +57,7 @@ export function Sidebar({ failureCount = 0 }) {
   const items = [
     { to: renewalsPath("dashboard"), label: "Dashboard", Icon: IconChart },
     { to: renewalsPath("register"), label: "Policy Register", Icon: IconTable },
+    { to: renewalsPath("analytics"), label: "Production report", Icon: IconChart },
     { to: renewalsPath("failures"), label: "Delivery Failures", Icon: IconAlert, badge: failureCount },
     { to: renewalsPath("log"), label: "Send Log", Icon: IconBell },
     { to: renewalsPath("financiers"), label: "Financiers", Icon: IconBank },
@@ -70,7 +71,7 @@ export function Sidebar({ failureCount = 0 }) {
       <div className="adt-sidebar-brand">
         <div className="adt-sidebar-app-name">Renewals</div>
         <div style={{ fontSize: 12, color: "var(--adt-muted)", marginTop: 4 }}>
-          T-60 · T-30 · T-15 reminders
+          T-60 · T-30 · T-15 · T-7 · T-1
         </div>
       </div>
       <nav className="adt-sidebar-nav" aria-label="Renewals navigation">

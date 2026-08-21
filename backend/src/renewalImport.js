@@ -37,6 +37,8 @@ const HEADER_ALIASES = {
   email: ["Email", "Email Address", "Client Email"],
   policyNumber: ["Policy Number", "Policy No", "Policy #"],
   insurer: ["Insurer", "Insurance Company", "Underwriter"],
+  premium: ["Premium", "Premium (KES)", "Last Premium", "Gross Premium"],
+  relationshipManager: ["Relationship Manager", "RM", "Officer", "Account Manager"],
 };
 
 function normalizeKey(value) {
@@ -151,6 +153,13 @@ function parseRenewalRow(row) {
   const email = String(pickValue(row, HEADER_ALIASES.email) || "").trim();
   const policyNumber = String(pickValue(row, HEADER_ALIASES.policyNumber) || "").trim();
   const insurer = String(pickValue(row, HEADER_ALIASES.insurer) || "").trim();
+  const premiumRaw = pickValue(row, HEADER_ALIASES.premium);
+  let premium = null;
+  if (premiumRaw !== "" && premiumRaw != null) {
+    const n = Number(String(premiumRaw).replace(/,/g, ""));
+    if (Number.isFinite(n)) premium = n;
+  }
+  const relationshipManager = String(pickValue(row, HEADER_ALIASES.relationshipManager) || "").trim();
 
   return {
     insuredName,
@@ -161,6 +170,8 @@ function parseRenewalRow(row) {
     email,
     policyNumber,
     insurer,
+    premium,
+    relationshipManager,
   };
 }
 

@@ -45,6 +45,8 @@ const {
   FINANCIER_SNAPSHOT_COLUMNS,
   LOG_SNAPSHOT_COLUMNS,
   SETTINGS_SNAPSHOT_COLUMNS: RENEWAL_SETTINGS_SNAPSHOT_COLUMNS,
+  FOLLOW_UP_SNAPSHOT_COLUMNS: RENEWAL_FOLLOW_UP_SNAPSHOT_COLUMNS,
+  ATTACHMENT_SNAPSHOT_COLUMNS,
 } = require("./renewals");
 const { startRenewalScheduler } = require("./renewalScheduler");
 const {
@@ -138,6 +140,7 @@ app.use(cors());
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
 function toSnakeCaseClaim(payload) {
   return {
@@ -533,6 +536,8 @@ async function maybePersistInMemorySnapshot() {
         renewalFinanciers,
         renewalNotificationLogs,
         renewalSettings,
+        renewalFollowUps,
+        renewalAttachments,
       ] = await Promise.all([
         pool.query("SELECT * FROM users ORDER BY id ASC"),
         pool.query("SELECT * FROM claims ORDER BY id ASC"),
@@ -550,6 +555,8 @@ async function maybePersistInMemorySnapshot() {
         pool.query("SELECT * FROM renewal_financiers ORDER BY id ASC"),
         pool.query("SELECT * FROM renewal_notification_logs ORDER BY id ASC"),
         pool.query("SELECT * FROM renewal_settings ORDER BY id ASC"),
+        pool.query("SELECT * FROM renewal_follow_ups ORDER BY id ASC"),
+        pool.query("SELECT * FROM renewal_attachments ORDER BY id ASC"),
       ]);
 
       const snapshot = {
@@ -571,6 +578,8 @@ async function maybePersistInMemorySnapshot() {
         renewalFinanciers: renewalFinanciers.rows,
         renewalNotificationLogs: renewalNotificationLogs.rows,
         renewalSettings: renewalSettings.rows,
+        renewalFollowUps: renewalFollowUps.rows,
+        renewalAttachments: renewalAttachments.rows,
       };
 
       await fs.mkdir(path.dirname(SNAPSHOT_FILE_PATH), { recursive: true });
@@ -615,6 +624,8 @@ async function maybeLoadInMemorySnapshot() {
 
     await pool.query("BEGIN");
     try {
+      await pool.query("DELETE FROM renewal_attachments");
+      await pool.query("DELETE FROM renewal_follow_ups");
       await pool.query("DELETE FROM renewal_notification_logs");
       await pool.query("DELETE FROM renewal_policies");
       await pool.query("DELETE FROM renewal_financiers");
@@ -753,18 +764,42 @@ async function maybeLoadInMemorySnapshot() {
       await restoreSnapshotRows(
         "renewal_policies",
         POLICY_SNAPSHOT_COLUMNS,
-        snapshot.renewalPolicies || []
+        (snapshot.renewalPolicies || []).map((row) => ({
+          ...row,
+          pipeline_stage: row.pipeline_stage || "Not contacted",
+          premium: row.premium ?? null,
+          assigned_officer_id: row.assigned_officer_id ?? null,
+          relationship_manager: row.relationship_manager || "",
+          sms_opt_out: row.sms_opt_out ?? false,
+        }))
       );
       await restoreSnapshotRows(
         "renewal_notification_logs",
         LOG_SNAPSHOT_COLUMNS,
-        snapshot.renewalNotificationLogs || []
+        (snapshot.renewalNotificationLogs || []).map((row) => ({
+          ...row,
+          delivery_status: row.delivery_status || row.status || null,
+        }))
       );
       await restoreSnapshotRows(
         "renewal_settings",
         RENEWAL_SETTINGS_SNAPSHOT_COLUMNS,
-        snapshot.renewalSettings || []
+        (snapshot.renewalSettings || []).map((row) => ({
+          ...row,
+          whatsapp_enabled: row.whatsapp_enabled ?? false,
+          sms_template: row.sms_template || "",
+          whatsapp_template: row.whatsapp_template || "",
+          email_subject_template: row.email_subject_template || "",
+          email_body_template: row.email_body_template || "",
+          financier_sms_template: row.financier_sms_template || "",
+          callback_number: row.callback_number || "",
+          quiet_start_hour: row.quiet_start_hour ?? 8,
+          quiet_end_hour: row.quiet_end_hour ?? 18,
+          sms_per_minute: row.sms_per_minute ?? 30,
+        }))
       );
+      await restoreSnapshotRows("renewal_follow_ups", RENEWAL_FOLLOW_UP_SNAPSHOT_COLUMNS, snapshot.renewalFollowUps || []);
+      await restoreSnapshotRows("renewal_attachments", ATTACHMENT_SNAPSHOT_COLUMNS, snapshot.renewalAttachments || []);
 
       await pool.query("COMMIT");
 

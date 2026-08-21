@@ -93,7 +93,10 @@ export function Financiers() {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.name}</td>
+                    <td>
+                      {row.name}
+                      {row.needsContact ? <span className="rn-pill rn-pill--warn" style={{ marginLeft: 8 }}>needs contact</span> : null}
+                    </td>
                     <td>{row.phone || "—"}</td>
                     <td>{row.phoneE164 || "—"}</td>
                     <td>{row.email || "—"}</td>

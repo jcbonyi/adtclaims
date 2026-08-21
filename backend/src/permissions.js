@@ -26,6 +26,10 @@ function canEditRenewals(role) {
   return ["Admin", "Claims Officer", "Operations Team"].includes(role);
 }
 
+function canViewRenewals(role) {
+  return ROLES.includes(role);
+}
+
 function canManageRenewalSettings(role) {
   return role === "Admin";
 }
@@ -48,6 +52,7 @@ module.exports = {
   canManageValuers,
   canManageUsers,
   canEditRenewals,
+  canViewRenewals,
   canManageRenewalSettings,
   requirePermission,
 };

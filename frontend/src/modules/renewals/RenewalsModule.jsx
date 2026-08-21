@@ -5,6 +5,7 @@ import { fetchRenewals, fetchRenewalsDashboard } from "./api/renewalsApi";
 import { renewalsPath } from "./basePath";
 import { canManageRenewalSettings } from "./constants";
 import { AppLayout } from "./components/AppLayout";
+import { Analytics } from "./components/Analytics";
 import { Dashboard } from "./components/Dashboard";
 import { Failures } from "./components/Failures";
 import { Financiers } from "./components/Financiers";
@@ -67,6 +68,7 @@ function RenewalsShell() {
         <Routes>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard onOpenPolicy={openPolicy} />} />
+          <Route path="analytics" element={<Analytics />} />
           <Route
             path="register"
             element={

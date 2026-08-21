@@ -24,6 +24,9 @@ function policyToExportRow(p) {
     Insurer: p.insurer || "",
     "Policy Number": p.policyNumber || "",
     Status: p.status || "",
+    Pipeline: p.pipelineStage || "",
+    Premium: p.premium ?? "",
+    "Relationship Manager": p.officerName || p.relationshipManager || "",
     "Days Until Renewal": p.daysUntilRenewal ?? "",
     "Phone (E.164)": p.phoneE164 || "",
   };
@@ -34,12 +37,14 @@ const EXPORT_COLUMNS = Object.keys(policyToExportRow({}));
 const TEMPLATE_COLUMNS = [
   "Insured Name",
   "Contacts",
+  "Email",
   "Policy Renewal",
   "Car Registration Details",
   "Financial Interest",
-  "Email",
   "Insurer",
   "Policy Number",
+  "Premium",
+  "Relationship Manager",
 ];
 
 async function buildRenewalsWorkbookBuffer(rows, { title = "Policy Renewals", filterSummary = "" } = {}) {
@@ -90,7 +95,7 @@ async function buildRenewalsTemplateBuffer() {
 
   sheet.mergeCells(2, 1, 2, TEMPLATE_COLUMNS.length);
   sheet.getCell(2, 1).value =
-    "Required: Insured Name, Contacts (phone without country code, e.g. 722111333), Policy Renewal date. Multiple vehicle regs can be separated with &. Financial Interest is notified when populated (not N/A). Dates as YYYY-MM-DD or DD/MM/YYYY.";
+    "Required: Insured Name, Contacts (phone e.g. 722111333), Email, Policy Renewal date. Re-importing the same insured + vehicle regs + renewal date updates the existing row. Financial Interest (not N/A) also notifies the financier.";
   sheet.getCell(2, 1).font = { italic: true, size: 10 };
 
   const headerRow = 4;
@@ -105,11 +110,13 @@ async function buildRenewalsTemplateBuffer() {
   sheet.getRow(headerRow + 1).values = [
     "MUKYS IMPORTERS LIMITED",
     "722111333",
+    "ops@mukys.example",
     "2026-02-01",
     "KBJ 139Q",
     "ABSON / N/A",
-    "",
-    "",
+    "CIC",
+    "POL-001",
+    "125000",
     "",
   ];
 

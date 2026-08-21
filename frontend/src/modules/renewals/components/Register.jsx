@@ -6,11 +6,21 @@ import {
   downloadRenewalsExcel,
   downloadRenewalsTemplate,
   importRenewalsExcel,
+  previewRenewalsExcel,
 } from "../api/renewalsApi";
 import { renewalsPath } from "../basePath";
-import { canEditRenewals, canManageRenewalSettings, daysUntilLabel, daysUntilTone, isDayCount, KPI_FILTER_LABELS, POLICY_STATUSES } from "../constants";
+import {
+  PIPELINE_STAGES,
+  canEditRenewals,
+  canManageRenewalSettings,
+  daysUntilLabel,
+  daysUntilTone,
+  isDayCount,
+  KPI_FILTER_LABELS,
+  POLICY_STATUSES,
+} from "../constants";
 import { formatDisplayDate } from "../../valuationRegister/utils/format";
-import { StatusBadge } from "./StatusBadge";
+import { PipelineBadge, StatusBadge } from "./StatusBadge";
 import { AlertBanner, Button, Card, EmptyState, FilterBar, PageHeader } from "./ui";
 
 export function Register({ policies, onView, onCreate, onReload }) {
@@ -21,6 +31,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
   const [filters, setFilters] = useState({
     q: searchParams.get("q") || "",
     status: "",
+    pipeline: searchParams.get("pipeline") || "",
   });
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -29,11 +40,12 @@ export function Register({ policies, onView, onCreate, onReload }) {
   const [clearResult, setClearResult] = useState(null);
 
   const deferredQ = useDeferredValue(filters.q);
-  const hasActiveFilters = Boolean(filters.q || filters.status || windowFilter);
+  const hasActiveFilters = Boolean(filters.q || filters.status || filters.pipeline || windowFilter);
 
   const rows = useMemo(() => {
     return policies.filter((p) => {
       if (filters.status && p.status !== filters.status) return false;
+      if (filters.pipeline && p.pipelineStage !== filters.pipeline) return false;
       if (windowFilter === "t60" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 30 && p.daysUntilRenewal <= 60)) return false;
       if (windowFilter === "t30" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 15 && p.daysUntilRenewal <= 30)) return false;
       if (windowFilter === "t15" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 15)) return false;
@@ -46,7 +58,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
       }
       return true;
     });
-  }, [policies, filters.status, deferredQ, windowFilter]);
+  }, [policies, filters.status, filters.pipeline, deferredQ, windowFilter]);
 
   const kpiLabel = KPI_FILTER_LABELS[windowFilter];
 
@@ -71,6 +83,11 @@ export function Register({ policies, onView, onCreate, onReload }) {
     setImporting(true);
     setImportResult(null);
     try {
+      const preview = await previewRenewalsExcel(file);
+      const ok = window.confirm(
+        `Import preview\n\nNew rows: ${preview.wouldInsert}\nUpdates (same insured + regs + date): ${preview.wouldUpdate}\nMissing email: ${preview.missingEmail}\nNew financiers to create: ${(preview.newFinanciers || []).join(", ") || "none"}\n\nCommit this import?`
+      );
+      if (!ok) return;
       const result = await importRenewalsExcel(file);
       setImportResult(result);
       await onReload?.();
@@ -164,8 +181,10 @@ export function Register({ policies, onView, onCreate, onReload }) {
       {importResult ? (
         <AlertBanner tone="success" onDismiss={() => setImportResult(null)}>
           <p style={{ margin: 0 }}>
-            Imported <strong>{importResult.inserted}</strong> of {importResult.totalRows} rows
+            Imported <strong>{importResult.inserted}</strong> new
+            {importResult.updated ? <> · updated <strong>{importResult.updated}</strong></> : null} of {importResult.totalRows} rows
             {importResult.headerRowIndex ? ` (header row ${importResult.headerRowIndex})` : ""}.
+            {importResult.newFinanciers?.length ? ` Created financiers: ${importResult.newFinanciers.join(", ")}.` : ""}
           </p>
           {importResult.warnings?.length ? (
             <ul className="val-alert-list">
@@ -182,7 +201,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
 
       <FilterBar
         showClear={hasActiveFilters}
-        onClear={() => setFilters({ q: "", status: "" })}
+        onClear={() => setFilters({ q: "", status: "", pipeline: "" })}
       >
         <input
           className="adt-input val-filter-input"
@@ -199,6 +218,19 @@ export function Register({ policies, onView, onCreate, onReload }) {
         >
           <option value="">All statuses</option>
           {POLICY_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <select
+          className="adt-input val-filter-input"
+          value={filters.pipeline}
+          onChange={(e) => setFilters((f) => ({ ...f, pipeline: e.target.value }))}
+          aria-label="Filter by pipeline"
+        >
+          <option value="">All pipeline stages</option>
+          {PIPELINE_STAGES.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
@@ -224,6 +256,8 @@ export function Register({ policies, onView, onCreate, onReload }) {
                   <th>Countdown</th>
                   <th>Phone</th>
                   <th>Financier</th>
+                  <th>Pipeline</th>
+                  <th>RM</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -244,6 +278,10 @@ export function Register({ policies, onView, onCreate, onReload }) {
                     </td>
                     <td>{row.phoneE164 || row.phoneRaw || "—"}</td>
                     <td>{row.financierNames.join(", ") || "—"}</td>
+                    <td>
+                      <PipelineBadge stage={row.pipelineStage} />
+                    </td>
+                    <td>{row.officerName || row.relationshipManager || "—"}</td>
                     <td>
                       <StatusBadge status={row.status} />
                     </td>

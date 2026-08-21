@@ -1,4 +1,7 @@
-const nodemailer = require("nodemailer");
+const {
+  sendWhatsApp,
+  isWhatsAppConfigured,
+} = require("./renewalOps");
 
 let transporter = null;
 
@@ -268,15 +271,25 @@ async function sendRenewalTestSms(to) {
   });
 }
 
+async function sendRenewalTestWhatsApp(to) {
+  return sendWhatsApp({
+    to,
+    message: "ADT Renewals — WhatsApp test. This is a test message from the ADT Policy Renewals notification system.",
+  });
+}
+
 module.exports = {
   isSmtpConfigured,
   isSmsConfigured,
+  isWhatsAppConfigured,
   notifyValuationEvent,
   sendTestEmail,
   sendRenewalTestEmail,
   sendRenewalTestSms,
+  sendRenewalTestWhatsApp,
   sendEmail,
   sendSms,
+  sendWhatsApp,
   buildRenewalSms,
   buildRenewalEmail,
   sendRenewalFailureDigest,

@@ -56,6 +56,9 @@ export function Dashboard({ onOpenPolicy }) {
         <span className={`rn-pill${settings.smsConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
           SMS {settings.smsConfigured ? "configured" : "not configured"}
         </span>
+        <span className={`rn-pill${settings.whatsappConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
+          WhatsApp {settings.whatsappConfigured ? "configured" : "not configured"}
+        </span>
         <span className={`rn-pill${settings.smtpConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
           Email {settings.smtpConfigured ? "configured" : "not configured"}
         </span>
@@ -69,6 +72,10 @@ export function Dashboard({ onOpenPolicy }) {
         <KpiCard label="Due 0–15 days" value={kpis.t15} onClick={() => navigate(renewalsPath("register?window=t15"))} />
         <KpiCard label="Due 61+ days" value={kpis.later ?? 0} onClick={() => navigate(renewalsPath("register?window=later"))} />
         <KpiCard label="Overdue" value={kpis.overdue} onClick={() => navigate(renewalsPath("register?window=overdue"))} />
+        <KpiCard label="Quoted" value={kpis.quoted ?? 0} onClick={() => navigate(renewalsPath("register?pipeline=Quoted"))} />
+        <KpiCard label="Awaiting payment" value={kpis.awaiting_payment ?? 0} />
+        <KpiCard label="Bound" value={kpis.bound ?? 0} />
+        <KpiCard label="Premium at risk" value={kpis.premium_at_risk ? `KES ${Number(kpis.premium_at_risk).toLocaleString()}` : "—"} />
         <KpiCard
           label="Open failures"
           value={kpis.open_failures}
@@ -92,11 +99,11 @@ export function Dashboard({ onOpenPolicy }) {
         <Card className="val-chart-card">
           <h3 className="adt-card-header">Delivery by channel</h3>
           {channelStats.length === 0 ? (
-            <p className="rn-muted">No send attempts yet. The daily job runs at 07:30.</p>
+            <p className="rn-muted">No send attempts yet. The daily job runs at 08:00 EAT.</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart
-                data={["sms", "email"].map((channel) => ({
+                data={["sms", "email", "whatsapp"].map((channel) => ({
                   label: channel.toUpperCase(),
                   sent: channelStats.filter((s) => s.channel === channel && s.status === "sent").reduce((n, s) => n + s.total, 0),
                   failed: channelStats.filter((s) => s.channel === channel && s.status === "failed").reduce((n, s) => n + s.total, 0),

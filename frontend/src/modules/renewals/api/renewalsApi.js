@@ -90,6 +90,25 @@ export async function sendTestSms(phone) {
   return res.data;
 }
 
+export async function sendTestWhatsApp(phone) {
+  const res = await client.post("/renewals/notifications/test-whatsapp", { phone });
+  return res.data;
+}
+
+export async function pollDelivery() {
+  const res = await client.post("/renewals/poll-delivery");
+  return res.data;
+}
+
+export async function previewRenewalsExcel(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await client.post("/renewals/import-excel?preview=true", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
 export async function importRenewalsExcel(file) {
   const form = new FormData();
   form.append("file", file);
@@ -124,4 +143,52 @@ export async function downloadRenewalsExcel(params) {
 export async function downloadRenewalsTemplate() {
   const res = await client.get("/renewals/template.xlsx", { responseType: "blob" });
   downloadBlob(res, "ADT-renewals-import-template.xlsx");
+}
+
+export async function fetchOfficers() {
+  const res = await client.get("/renewals/officers");
+  return res.data;
+}
+
+export async function fetchClient360(q) {
+  const res = await client.get("/renewals/client-360", { params: { q } });
+  return res.data;
+}
+
+export async function fetchMonthlyReport(params) {
+  const res = await client.get("/renewals/reports/monthly", { params });
+  return res.data;
+}
+
+export async function downloadMonthlyReport(params) {
+  const res = await client.get("/renewals/reports/monthly.xlsx", { params, responseType: "blob" });
+  downloadBlob(res, "ADT-renewals-monthly.xlsx");
+}
+
+export async function rollRenewal(id) {
+  const res = await client.post(`/renewals/${id}/roll`);
+  return res.data;
+}
+
+export async function addFollowUp(id, payload) {
+  const res = await client.post(`/renewals/${id}/follow-ups`, payload);
+  return res.data;
+}
+
+export async function uploadRenewalAttachment(id, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await client.post(`/renewals/${id}/attachments`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
+export function attachmentDownloadUrl(policyId, fileId) {
+  return `/renewals/${policyId}/attachments/${fileId}`;
+}
+
+export async function downloadRenewalAttachment(policyId, fileId, filename) {
+  const res = await client.get(`/renewals/${policyId}/attachments/${fileId}`, { responseType: "blob" });
+  downloadBlob(res, filename || "attachment");
 }
