@@ -86,6 +86,7 @@ function createDbPool(options = {}) {
       pool: new Pool({
         connectionString: conn,
         max: 10,
+        connectionTimeoutMillis: 5000,
         ...(isSupabase
           ? {
               ssl: { rejectUnauthorized: false },
@@ -97,6 +98,16 @@ function createDbPool(options = {}) {
   }
 
   const mem = newDb({ autoCreateForeignKeyIndices: true });
+  try {
+    mem.public.registerFunction({
+      name: "trim",
+      args: ["text"],
+      returns: "text",
+      implementation: (value) => String(value ?? "").trim(),
+    });
+  } catch {
+    /* pg-mem already has trim, or signature differs by version */
+  }
   const adapter = mem.adapters.createPg();
   return {
     pool: new adapter.Pool(),
@@ -1130,7 +1141,11 @@ app.post("/api/auth/login", async (req, res) => {
     };
     return res.json({ token: createToken(slimUser), user: slimUser });
   } catch (error) {
-    return res.status(400).json({ message: error.message });
+    if (error?.issues) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+    console.error("Login failed:", error);
+    return res.status(500).json({ message: error.message || "Login failed" });
   }
 });
 
@@ -2493,16 +2508,28 @@ app.use((error, _, res, __) => {
   res.status(500).json({ message: error.message || "Internal server error" });
 });
 
-async function startServer() {
+async function seedOptionalData() {
   try {
-    await ensureDb();
-    await maybeLoadInMemorySnapshot();
     await seedQuotationsIfEmpty(pool, nextSerialId);
     await seedValuersIfEmpty(pool, nextSerialId);
     await seedRenewalsIfEmpty(pool, nextSerialId);
   } catch (error) {
+    console.error("Optional seed failed (server will still start):", error.message);
+  }
+}
+
+async function startServer() {
+  try {
+    await ensureDb();
+    await maybeLoadInMemorySnapshot();
+    await seedOptionalData();
+  } catch (error) {
     const isConnectionIssue =
-      dbMode === "postgres" && (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND");
+      dbMode === "postgres" &&
+      (error.code === "ECONNREFUSED" ||
+        error.code === "ENOTFOUND" ||
+        error.code === "ETIMEDOUT" ||
+        error.message?.includes("timeout"));
     if (!isConnectionIssue) {
       throw error;
     }
@@ -2516,9 +2543,7 @@ async function startServer() {
     dbMode = fallback.dbMode;
     await ensureDb();
     await maybeLoadInMemorySnapshot();
-    await seedQuotationsIfEmpty(pool, nextSerialId);
-    await seedValuersIfEmpty(pool, nextSerialId);
-    await seedRenewalsIfEmpty(pool, nextSerialId);
+    await seedOptionalData();
   }
 
   registerQuotationRoutes(app, {

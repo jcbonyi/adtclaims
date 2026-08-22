@@ -449,8 +449,8 @@ async function ensureDefaultValuers(pool, nextSerialId) {
   let added = 0;
   for (const v of DEFAULT_VALUERS) {
     const existing = await pool.query(
-      `SELECT id FROM valuers WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))`,
-      [v.name]
+      `SELECT id FROM valuers WHERE LOWER(name) = LOWER($1)`,
+      [String(v.name || "").trim()]
     );
     if (existing.rows[0]) continue;
     const id = await nextSerialId(pool, "valuers");
