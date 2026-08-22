@@ -13,6 +13,7 @@ Full-stack web application for managing insurance claims across insurers and cla
 - **Policy Renewals** module (`/renewals`) — Excel ingest (upsert + preview), T-60/30/15/7/1 SMS + email + WhatsApp, pipeline/RM ownership, financier auto-create, inbound STOP/RENEWED, attachments, client 360, monthly production report
 - **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, **Excel import/export** (template download, filtered export), CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
 - Claims register with filters, pagination, sorting, global search, row aging color cues, inline status update, and quick remark add
+- Claim **notifications & automations** (`/claims/notifications`) — email on new claims and high-signal status changes (RA issued, released, closed, pending docs, assessment), daily 07:15 ops digest of the four follow-up queues, aging chases at 8 / 15 / 30+ days
 - Claim detail form for create/edit with append-only remarks and status transition history
 - Overall dashboard with KPI cards and charts (status, insurer, aging)
 - Insurer dashboard section with insurer-specific KPIs, status breakdown, and worst-aging open claims
@@ -178,6 +179,11 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 - `GET /api/dashboard/overall`
 - `GET /api/dashboard/insurer?insurer=...`
 - `GET /api/dashboard/operations`
+- `GET /api/claims-notifications/settings` claims automation settings
+- `PUT /api/claims-notifications/settings` admin: ops emails, chase days, channels
+- `GET /api/claims-notifications/log` send log
+- `POST /api/claims-notifications/run` run daily digest + aging chases
+- `POST /api/claims-notifications/test-email` admin SMTP test
 - `POST /api/claims/import-excel` import register from Excel
 - `GET /api/claims-export.xlsx` export claims as a styled Excel workbook (ADT branding; same filters as the register)
 - `GET /api/renewals` list renewal policies
@@ -196,12 +202,21 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 Configure in `backend/.env`:
 
 - **Email:** `SMTP_*` plus `RENEWAL_OPS_EMAIL_LIST` (daily failure digest; also editable in Renewals → Settings)
+- **Claims ops email:** `CLAIMS_OPS_EMAIL_LIST` (daily digest and status alerts; also editable in Claims → Notifications). Falls back to `MANAGEMENT_EMAIL_LIST`.
 - **SMS:** Africa's Talking — `AFRICASTALKING_USERNAME`, `AFRICASTALKING_API_KEY`, optional `AFRICASTALKING_SENDER`. Set `AFRICASTALKING_SANDBOX=true` for the sandbox API.
 - **WhatsApp:** `AFRICASTALKING_WHATSAPP_FROM` (AT) or `WHATSAPP_PHONE_ID` + `WHATSAPP_TOKEN` (Meta Cloud API). Enable the channel in Renewals → Settings.
 - **Inbound SMS / DLR:** point Africa's Talking callbacks to `POST /api/renewals/webhooks/africastalking` and `POST /api/renewals/webhooks/dlr`. Optional `RENEWAL_WEBHOOK_SECRET`.
 - The reminder job runs daily at **08:00 EAT**, only during quiet hours (default 08:00–18:00). Admins can also run it from Renewals → Settings (force overrides quiet hours).
 - Contacts without a country code (e.g. `722111333`) are stored as `+254722111333`. Multiple vehicle regs may be separated with `&`. Financial interest values other than `N/A` also notify the matching financier (stubs are auto-created from import; add phone/email under Renewals → Financiers).
 - Re-importing the same insured name + vehicle regs + renewal date **updates** the existing row. Import shows a preview before commit.
+
+## Claims notifications (email + optional SMS)
+
+Configure in `backend/.env` (`SMTP_*`, optional `CLAIMS_OPS_EMAIL_LIST`) and Claims → Notifications:
+
+- **Immediate:** new claim logged; high-signal status changes (RA Issued, Released, Closed/Paid/Repudiated, Pending Documents, Awaiting Assessment, Litigation, Payment Processing). Optional: email on every status change.
+- **Daily 07:15:** ops digest of Pending Assessment, Pending Documents, Not Released, and Stuck >7 days, plus one-off chases at 8 / 15 / 30+ days open and configurable chase days for assessment, documents, and unreleased vehicles.
+- Admins, Claims Officers, and Operations can click **Run now**. The send log is on the same page.
 
 ## Suggested Next Steps
 

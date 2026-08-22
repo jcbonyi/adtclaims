@@ -81,6 +81,9 @@ export default function ShellLayout() {
               <NavLink to="/claims/new" className={navPill}>
                 Add Claim
               </NavLink>
+              <NavLink to="/claims/notifications" className={navPill}>
+                Notifications
+              </NavLink>
               {user?.role === "Admin" ? (
                 <NavLink to="/users" className={navPill}>
                   User Management

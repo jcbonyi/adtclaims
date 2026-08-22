@@ -1,3 +1,4 @@
+const nodemailer = require("nodemailer");
 const {
   sendWhatsApp,
   isWhatsAppConfigured,
@@ -256,6 +257,94 @@ async function sendTestEmail(to) {
   });
 }
 
+function claimsOpsRecipients(settingsOpsList) {
+  const fromSettings = parseEmailList(settingsOpsList);
+  if (fromSettings.length) return fromSettings;
+  const fromEnv = parseEmailList(process.env.CLAIMS_OPS_EMAIL_LIST || "");
+  if (fromEnv.length) return fromEnv;
+  return managementRecipients();
+}
+
+function claimLine(claim) {
+  return `${claim.insuredName || claim.insured_name} | ${claim.registrationNumber || claim.registration_number || "—"} | ${claim.insurer || "—"} | ${claim.claimStatus || claim.claim_status || "—"}`;
+}
+
+async function sendClaimEventEmail({ to, event, claim, extra = {} }) {
+  const insured = claim.insuredName || claim.insured_name || "Claim";
+  const line = claimLine(claim);
+  const days = extra.daysOpen != null ? extra.daysOpen : claim.daysOpen ?? claim.days_open;
+  const titles = {
+    claim_created: `New claim: ${insured}`,
+    status_change: `Claim status: ${insured} → ${extra.toStatus || claim.claimStatus || claim.claim_status}`,
+    ra_issued: `RA issued: ${insured}`,
+    released: `Vehicle released: ${insured}`,
+    closed: `Claim closed: ${insured}`,
+    aging_8: `Claim aging 8+ days: ${insured}`,
+    aging_15: `Claim aging 15+ days: ${insured}`,
+    aging_30: `Claim aging 30+ days: ${insured}`,
+    pending_assessment: `Pending assessment: ${insured}`,
+    pending_documents: `Pending documents: ${insured}`,
+    not_released: `Not released: ${insured}`,
+  };
+  const subject = titles[event] || `ADT Claims — ${insured}`;
+  const text = [
+    `ADT Claims Tracker`,
+    "",
+    extra.intro || "",
+    line,
+    days != null ? `Days open: ${days}` : "",
+    extra.fromStatus ? `Previous status: ${extra.fromStatus}` : "",
+    extra.toStatus ? `New status: ${extra.toStatus}` : "",
+    extra.actorName ? `Updated by: ${extra.actorName}` : "",
+    extra.remark ? `Remark: ${extra.remark}` : "",
+    extra.garage ? `Garage: ${extra.garage}` : "",
+    "",
+    "Open the Claims Tracker to follow up.",
+  ]
+    .filter((lineText) => lineText !== "")
+    .join("\n");
+  return sendEmail({ to, subject, text });
+}
+
+async function sendClaimsOpsDigest({ to, digest, generatedAt }) {
+  const subject = `ADT Claims — daily ops digest (${digest.pendingAssessment} assessment, ${digest.pendingDocuments} documents, ${digest.notReleased} not released, ${digest.stuckOver7} stuck >7d)`;
+  const section = (title, rows) => {
+    if (!rows.length) return [`${title}: none`];
+    return [
+      `${title} (${rows.length})`,
+      ...rows.slice(0, 25).map(
+        (r) =>
+          `• ${r.insured_name} | ${r.registration_number || "—"} | ${r.insurer} | ${r.claim_status} | ${r.days_open}d`
+      ),
+      rows.length > 25 ? `…and ${rows.length - 25} more` : "",
+    ].filter(Boolean);
+  };
+  const text = [
+    `Daily claims operations digest.`,
+    `Generated: ${generatedAt}`,
+    `Open >30 days: ${digest.over30}`,
+    "",
+    ...section("Pending assessment", digest.pendingAssessmentRows),
+    "",
+    ...section("Pending documents", digest.pendingDocumentsRows),
+    "",
+    ...section("Not released (RA Issued / Under Repair)", digest.notReleasedRows),
+    "",
+    ...section("Stuck > 7 days", digest.stuckOver7Rows),
+    "",
+    "Open the Claims Tracker → Dashboard for the live queues.",
+  ].join("\n");
+  return sendEmail({ to, subject, text });
+}
+
+async function sendClaimsTestEmail(to) {
+  return sendEmail({
+    to,
+    subject: "ADT Claims — SMTP test",
+    text: "This is a test email from the ADT Claims Tracker notification system.",
+  });
+}
+
 async function sendRenewalTestEmail(to) {
   return sendEmail({
     to,
@@ -294,5 +383,9 @@ module.exports = {
   buildRenewalEmail,
   sendRenewalFailureDigest,
   renewalOpsRecipients,
+  claimsOpsRecipients,
+  sendClaimEventEmail,
+  sendClaimsOpsDigest,
+  sendClaimsTestEmail,
   parseEmailList,
 };

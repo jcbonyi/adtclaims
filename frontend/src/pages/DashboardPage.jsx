@@ -101,7 +101,7 @@ export default function DashboardPage() {
   const [kpiPage, setKpiPage] = useState(1);
   const [kpiLoading, setKpiLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const [notifyInfo, setNotifyInfo] = useState(null);
 
   const kpiTotalPages = useMemo(() => Math.max(1, Math.ceil(kpiTotal / 20)), [kpiTotal]);
 
@@ -131,10 +131,11 @@ export default function DashboardPage() {
       setLoading(true);
       setLoadError("");
       try {
-        const [overallRes, operationsRes, metaRes] = await Promise.allSettled([
+        const [overallRes, operationsRes, metaRes, notifyRes] = await Promise.allSettled([
           client.get("/dashboard/overall"),
           client.get("/dashboard/operations"),
           client.get("/meta"),
+          client.get("/claims-notifications/settings"),
         ]);
         if (ignore) return;
 
@@ -156,6 +157,9 @@ export default function DashboardPage() {
           if (list.length) {
             setSelectedInsurer((prev) => prev || list[0]);
           }
+        }
+        if (notifyRes.status === "fulfilled") {
+          setNotifyInfo(notifyRes.value.data);
         }
       } catch (error) {
         if (!ignore) {
@@ -250,6 +254,22 @@ export default function DashboardPage() {
 
   return (
     <section className="space-y-4">
+      {notifyInfo && !notifyInfo.smtpConfigured ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Claims email alerts are ready but SMTP is not configured. Set <code>SMTP_HOST</code> / <code>SMTP_FROM</code> or open{" "}
+          <Link className="font-semibold underline" to="/claims/notifications">
+            Claims → Notifications
+          </Link>
+          .
+        </div>
+      ) : notifyInfo ? (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+          Daily claims digest last ran {notifyInfo.lastRunAt ? new Date(notifyInfo.lastRunAt).toLocaleString() : "never"}.{" "}
+          <Link className="font-semibold hover:underline" style={{ color: "var(--adt-blue)" }} to="/claims/notifications">
+            Notification settings & log
+          </Link>
+        </div>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-4">
         <KpiCard
           label="Total Open Claims"

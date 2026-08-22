@@ -142,3 +142,15 @@ export const CLOSED_STATUSES = [
 ];
 
 export const AGING_BUCKETS = ["0-7", "8-14", "15-30", "30+"];
+
+export function canEditClaims(role) {
+  return ["Admin", "Claims Officer"].includes(role);
+}
+
+export function canManageClaimSettings(role) {
+  return role === "Admin";
+}
+
+export function canRunClaimJobs(role) {
+  return ["Admin", "Claims Officer", "Operations Team"].includes(role);
+}

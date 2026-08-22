@@ -34,6 +34,14 @@ function canManageRenewalSettings(role) {
   return role === "Admin";
 }
 
+function canManageClaimSettings(role) {
+  return role === "Admin";
+}
+
+function canRunClaimJobs(role) {
+  return ["Admin", "Claims Officer", "Operations Team"].includes(role);
+}
+
 function requirePermission(checkFn) {
   return (req, res, next) => {
     if (!checkFn(req.user?.role)) {
@@ -54,5 +62,7 @@ module.exports = {
   canEditRenewals,
   canViewRenewals,
   canManageRenewalSettings,
+  canManageClaimSettings,
+  canRunClaimJobs,
   requirePermission,
 };

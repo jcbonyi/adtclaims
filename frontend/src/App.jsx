@@ -6,6 +6,7 @@ import ClaimsRegisterPage from "./pages/ClaimsRegisterPage";
 import ForcePasswordChangePage from "./pages/ForcePasswordChangePage";
 import LoginPage from "./pages/LoginPage";
 import UserManagementPage from "./pages/UserManagementPage";
+import ClaimsNotificationsPage from "./pages/ClaimsNotificationsPage";
 import QuotationRegisterModule from "./modules/quotationRegister/QuotationRegisterModule";
 import ValuationRegisterModule from "./modules/valuationRegister/ValuationRegisterModule";
 import RenewalsModule from "./modules/renewals/RenewalsModule";
@@ -39,6 +40,7 @@ function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="claims" element={<ClaimsRegisterPage />} />
         <Route path="claims/new" element={<ClaimDetailPage mode="create" />} />
+        <Route path="claims/notifications" element={<ClaimsNotificationsPage />} />
         <Route path="claims/:id" element={<ClaimDetailPage mode="edit" />} />
         <Route path="quotations/*" element={<QuotationRegisterModule />} />
         <Route path="valuations/*" element={<ValuationRegisterModule />} />

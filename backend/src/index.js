@@ -50,6 +50,15 @@ const {
 } = require("./renewals");
 const { startRenewalScheduler } = require("./renewalScheduler");
 const {
+  ensureClaimsNotificationTables,
+  registerClaimsNotificationRoutes,
+  notifyClaimCreated,
+  notifyClaimStatusChange,
+  CLAIM_SETTINGS_SNAPSHOT_COLUMNS,
+  CLAIM_LOG_SNAPSHOT_COLUMNS,
+} = require("./claimsNotifications");
+const { startClaimScheduler } = require("./claimScheduler");
+const {
   CLAIM_STATUS_GROUPS,
   CLAIM_STATUSES,
   CLOSED_STATUS_LIST,
@@ -354,6 +363,7 @@ async function ensureDb() {
   await ensureQuotationsTable(pool);
   await ensureValuationsTables(pool);
   await ensureRenewalsTables(pool);
+  await ensureClaimsNotificationTables(pool);
 
   try {
     await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
@@ -538,6 +548,8 @@ async function maybePersistInMemorySnapshot() {
         renewalSettings,
         renewalFollowUps,
         renewalAttachments,
+        claimNotificationLogs,
+        claimSettings,
       ] = await Promise.all([
         pool.query("SELECT * FROM users ORDER BY id ASC"),
         pool.query("SELECT * FROM claims ORDER BY id ASC"),
@@ -557,6 +569,8 @@ async function maybePersistInMemorySnapshot() {
         pool.query("SELECT * FROM renewal_settings ORDER BY id ASC"),
         pool.query("SELECT * FROM renewal_follow_ups ORDER BY id ASC"),
         pool.query("SELECT * FROM renewal_attachments ORDER BY id ASC"),
+        pool.query("SELECT * FROM claim_notification_logs ORDER BY id ASC"),
+        pool.query("SELECT * FROM claim_settings ORDER BY id ASC"),
       ]);
 
       const snapshot = {
@@ -580,6 +594,8 @@ async function maybePersistInMemorySnapshot() {
         renewalSettings: renewalSettings.rows,
         renewalFollowUps: renewalFollowUps.rows,
         renewalAttachments: renewalAttachments.rows,
+        claimNotificationLogs: claimNotificationLogs.rows,
+        claimSettings: claimSettings.rows,
       };
 
       await fs.mkdir(path.dirname(SNAPSHOT_FILE_PATH), { recursive: true });
@@ -636,6 +652,8 @@ async function maybeLoadInMemorySnapshot() {
       await pool.query("DELETE FROM valuations");
       await pool.query("DELETE FROM valuation_settings");
       await pool.query("DELETE FROM valuers");
+      await pool.query("DELETE FROM claim_notification_logs");
+      await pool.query("DELETE FROM claim_settings");
       await pool.query("DELETE FROM claim_status_history");
       await pool.query("DELETE FROM claim_remarks");
       await pool.query("DELETE FROM user_audit_logs");
@@ -719,6 +737,25 @@ async function maybeLoadInMemorySnapshot() {
         "claim_status_history",
         ["id", "claim_id", "from_status", "to_status", "changed_by", "changed_at"],
         snapshot.claimStatusHistory || []
+      );
+      await restoreSnapshotRows(
+        "claim_notification_logs",
+        CLAIM_LOG_SNAPSHOT_COLUMNS,
+        snapshot.claimNotificationLogs || []
+      );
+      await restoreSnapshotRows(
+        "claim_settings",
+        CLAIM_SETTINGS_SNAPSHOT_COLUMNS,
+        (snapshot.claimSettings || []).map((row) => ({
+          ...row,
+          ops_phone_list: row.ops_phone_list || "",
+          email_enabled: row.email_enabled ?? true,
+          sms_enabled: row.sms_enabled ?? false,
+          notify_all_status_changes: row.notify_all_status_changes ?? false,
+          assessment_chase_days: row.assessment_chase_days ?? 3,
+          documents_chase_days: row.documents_chase_days ?? 5,
+          not_released_chase_days: row.not_released_chase_days ?? 5,
+        }))
       );
       await restoreSnapshotRows(
         "user_audit_logs",
@@ -1857,6 +1894,19 @@ async function createOrUpdateClaim(req, res, mode) {
     await writeStatusTransition(client, claimId, oldStatus, c.claim_status, req.user.id);
     await client.query("COMMIT");
     await maybePersistInMemorySnapshot();
+    const notifyDeps = { nextSerialId, dbMode, onPersist: maybePersistInMemorySnapshot };
+    if (mode === "create") {
+      notifyClaimCreated(pool, notifyDeps, { claimId, actor: req.user }).catch((err) =>
+        console.error("Claim created notification failed:", err)
+      );
+    } else if (oldStatus && oldStatus !== c.claim_status) {
+      notifyClaimStatusChange(pool, notifyDeps, {
+        claimId,
+        fromStatus: oldStatus,
+        toStatus: c.claim_status,
+        actor: req.user,
+      }).catch((err) => console.error("Claim status notification failed:", err));
+    }
     return res.status(mode === "create" ? 201 : 200).json({ id: claimId });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1957,6 +2007,19 @@ app.patch(
         }
         await client.query("COMMIT");
         await maybePersistInMemorySnapshot();
+        if (oldStatus !== payload.status) {
+          notifyClaimStatusChange(
+            pool,
+            { nextSerialId, dbMode, onPersist: maybePersistInMemorySnapshot },
+            {
+              claimId: Number(req.params.id),
+              fromStatus: oldStatus,
+              toStatus: payload.status,
+              actor: req.user,
+              remark: payload.remark,
+            }
+          ).catch((err) => console.error("Claim status notification failed:", err));
+        }
         return res.json({ ok: true });
       } catch (error) {
         await client.query("ROLLBACK");
@@ -2515,6 +2578,20 @@ async function startServer() {
   });
 
   startRenewalScheduler(pool, {
+    nextSerialId,
+    dbMode,
+    onPersist: maybePersistInMemorySnapshot,
+  });
+
+  registerClaimsNotificationRoutes(app, {
+    pool,
+    authRequired,
+    nextSerialId,
+    onPersist: maybePersistInMemorySnapshot,
+    dbMode,
+  });
+
+  startClaimScheduler(pool, {
     nextSerialId,
     dbMode,
     onPersist: maybePersistInMemorySnapshot,
