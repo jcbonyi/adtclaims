@@ -6,12 +6,17 @@ const AuthContext = createContext(null);
 
 /** Prefer server JSON message; surface network/config issues (common on Vercel). */
 function apiErrorMessage(error, fallback) {
-  const msg = error.response?.data?.message;
+  const data = error.response?.data;
+  const msg = data?.message;
   if (typeof msg === "string" && msg.trim()) return msg;
+  if (typeof data === "string" && data.trim() && data.length < 280 && !data.includes("<")) {
+    return data.trim();
+  }
   const status = error.response?.status;
   if (!error.response && error.message) {
-    return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL in Vercel matches your API (e.g. …/api).`;
+    return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL in Vercel is https://your-app.vercel.app/_/backend/api`;
   }
+  if (status === 503) return `${fallback}: API database is not ready. Check DATABASE_URL on the Vercel backend service.`;
   if (status) return `${fallback} (HTTP ${status}).`;
   return fallback;
 }

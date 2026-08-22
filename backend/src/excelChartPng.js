@@ -1,7 +1,13 @@
 const fs = require("fs");
 const path = require("path");
-const { createCanvas } = require("canvas");
 const opentype = require("opentype.js");
+
+let createCanvas = null;
+try {
+  ({ createCanvas } = require("canvas"));
+} catch (error) {
+  console.warn("Native canvas is unavailable; Excel chart images will be skipped:", error.message);
+}
 
 const CHART_COLORS = ["#0078C8", "#72BF44", "#006BA3", "#F59E0B", "#7C3AED", "#DB2777", "#14B8A6"];
 const FONT_DIR = path.join(__dirname, "..", "node_modules", "dejavu-fonts-ttf", "ttf");
@@ -130,6 +136,7 @@ function drawPieChart(ctx, regular, items, width, height) {
  * @returns {Buffer|null}
  */
 function renderChartPng(chartType, rows, title) {
+  if (!createCanvas) return null;
   const items = toItems(rows);
   if (!items.length) return null;
 

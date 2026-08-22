@@ -11,7 +11,6 @@ const { newDb } = require("pg-mem");
 const { z } = require("zod");
 const multer = require("multer");
 const xlsx = require("xlsx");
-const { buildClaimsManagementWorkbookBuffer } = require("./claimsExportExcel");
 const {
   getPendingDocumentsMeta,
   normalizeReceivedKeys,
@@ -69,6 +68,7 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 const PORT = Number(process.env.PORT || 4000);
+const IS_VERCEL = Boolean(process.env.VERCEL);
 const JWT_SECRET = process.env.JWT_SECRET || "change-me-now";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "8h";
 const ADMIN_RESET_KEY = normalizeSecret(process.env.ADMIN_RESET_KEY || "");
@@ -76,18 +76,38 @@ const SNAPSHOT_FILE_PATH =
   process.env.INMEMORY_SNAPSHOT_PATH ||
   path.join(__dirname, "..", ".persist", "in-memory-db-snapshot.json");
 
+function hostedPostgresNeedsSsl(connectionString) {
+  const conn = String(connectionString || "");
+  if (!conn || /sslmode=disable/i.test(conn)) return false;
+  if (/localhost|127\.0\.0\.1/i.test(conn)) return false;
+  return true;
+}
+
+function isPostgresUnreachable(error) {
+  const code = error?.code;
+  const msg = String(error?.message || "");
+  return (
+    code === "ECONNREFUSED" ||
+    code === "ENOTFOUND" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNRESET" ||
+    code === "EAI_AGAIN" ||
+    code === "28000" ||
+    /timeout|ssl|pg_hba|self-signed|certificate|connect E|Connection terminated/i.test(msg)
+  );
+}
+
 function createDbPool(options = {}) {
   const { forceInMemory = false } = options;
   if (!forceInMemory && process.env.DATABASE_URL) {
     const conn = process.env.DATABASE_URL;
-    const isSupabase =
-      typeof conn === "string" && (conn.includes("supabase.co") || conn.includes("pooler.supabase.com"));
     return {
       pool: new Pool({
         connectionString: conn,
-        max: 10,
-        connectionTimeoutMillis: 5000,
-        ...(isSupabase
+        max: IS_VERCEL ? 1 : 10,
+        connectionTimeoutMillis: IS_VERCEL ? 8000 : 5000,
+        idleTimeoutMillis: IS_VERCEL ? 5000 : 30000,
+        ...(hostedPostgresNeedsSsl(conn)
           ? {
               ssl: { rejectUnauthorized: false },
             }
@@ -156,11 +176,55 @@ const claimInputSchema = z.object({
   }
 });
 
+app.use((req, _res, next) => {
+  if (typeof req.url === "string" && req.url.startsWith("/_/backend")) {
+    req.url = req.url.slice("/_/backend".length) || "/";
+  }
+  next();
+});
 app.use(cors());
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+let dbReady = false;
+let startupError = null;
+let markReady;
+const readyPromise = new Promise((resolve) => {
+  markReady = resolve;
+});
+
+function isHealthPath(reqPath) {
+  return reqPath === "/health" || reqPath === "/api/health" || reqPath.endsWith("/api/health");
+}
+
+app.use(async (req, res, next) => {
+  if (isHealthPath(req.path || "")) return next();
+  try {
+    await readyPromise;
+  } catch {
+    /* boot always resolves */
+  }
+  if (startupError && !dbReady) {
+    return res.status(503).json({
+      message: `Database is not ready: ${startupError.message}`,
+    });
+  }
+  return next();
+});
+
+function sendHealth(_req, res) {
+  res.json({
+    ok: dbReady && !startupError,
+    ready: dbReady,
+    dbMode,
+    vercel: IS_VERCEL,
+    error: startupError ? startupError.message : null,
+  });
+}
+app.get("/health", sendHealth);
+app.get("/api/health", sendHealth);
 
 function toSnakeCaseClaim(payload) {
   return {
@@ -374,7 +438,11 @@ async function ensureDb() {
   await ensureQuotationsTable(pool);
   await ensureValuationsTables(pool);
   await ensureRenewalsTables(pool);
-  await ensureClaimsNotificationTables(pool);
+  try {
+    await ensureClaimsNotificationTables(pool);
+  } catch (error) {
+    console.error("Claims notification tables failed (auth will still work):", error.message);
+  }
 
   try {
     await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
@@ -2227,6 +2295,7 @@ app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
       formatDateForCsv(row.closure_date),
       computeDaysOpen(row.reported_to_broker_date, row.closure_date),
     ]);
+    const { buildClaimsManagementWorkbookBuffer } = require("./claimsExportExcel");
     const buffer = await buildClaimsManagementWorkbookBuffer({
       headers,
       dataRows,
@@ -2524,13 +2593,9 @@ async function startServer() {
     await maybeLoadInMemorySnapshot();
     await seedOptionalData();
   } catch (error) {
-    const isConnectionIssue =
-      dbMode === "postgres" &&
-      (error.code === "ECONNREFUSED" ||
-        error.code === "ENOTFOUND" ||
-        error.code === "ETIMEDOUT" ||
-        error.message?.includes("timeout"));
-    if (!isConnectionIssue) {
+    const canFallbackLocally =
+      !IS_VERCEL && dbMode === "postgres" && isPostgresUnreachable(error);
+    if (!canFallbackLocally) {
       throw error;
     }
 
@@ -2590,7 +2655,9 @@ async function startServer() {
     }
   });
 
-  startValuationScheduler(pool);
+  if (!IS_VERCEL) {
+    startValuationScheduler(pool);
+  }
 
   registerRenewalRoutes(app, {
     pool,
@@ -2602,11 +2669,13 @@ async function startServer() {
     upload,
   });
 
-  startRenewalScheduler(pool, {
-    nextSerialId,
-    dbMode,
-    onPersist: maybePersistInMemorySnapshot,
-  });
+  if (!IS_VERCEL) {
+    startRenewalScheduler(pool, {
+      nextSerialId,
+      dbMode,
+      onPersist: maybePersistInMemorySnapshot,
+    });
+  }
 
   registerClaimsNotificationRoutes(app, {
     pool,
@@ -2616,11 +2685,23 @@ async function startServer() {
     dbMode,
   });
 
-  startClaimScheduler(pool, {
-    nextSerialId,
-    dbMode,
-    onPersist: maybePersistInMemorySnapshot,
-  });
+  if (!IS_VERCEL) {
+    startClaimScheduler(pool, {
+      nextSerialId,
+      dbMode,
+      onPersist: maybePersistInMemorySnapshot,
+    });
+  }
+
+  if (IS_VERCEL) {
+    if (dbMode === "in-memory") {
+      console.warn(
+        "Vercel is using an empty in-memory database. Set DATABASE_URL on the backend service to hosted Postgres."
+      );
+    }
+    console.log(`API ready on Vercel (dbMode=${dbMode})`);
+    return;
+  }
 
   app.listen(PORT, () => {
     if (dbMode === "in-memory") {
@@ -2632,7 +2713,20 @@ async function startServer() {
   });
 }
 
-startServer().catch((error) => {
-  console.error("Failed to initialize database:", error);
-  process.exit(1);
-});
+async function boot() {
+  try {
+    await startServer();
+    dbReady = true;
+  } catch (error) {
+    startupError = error;
+    console.error("Failed to initialize database:", error);
+    if (!IS_VERCEL) {
+      process.exit(1);
+    }
+  } finally {
+    markReady();
+  }
+}
+
+boot();
+module.exports = app;

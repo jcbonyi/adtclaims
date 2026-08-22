@@ -125,11 +125,12 @@ The repo includes [`vercel.json`](vercel.json) with **Services** entries `fronte
 **If the project framework is not “Services”:** In Vercel → Project → Settings → General, set **Root Directory** to `frontend` and **Framework Preset** to **Vite**, then you can remove `experimentalServices` and host the API separately.
 
 1. Push this repository to GitHub and import it in [Vercel](https://vercel.com). If Vercel enables **Services** for this monorepo, keep the provided `vercel.json`.
-2. In Vercel **Project → Settings → Environment Variables**, set **`VITE_API_BASE_URL`**:
-   - **Combined deploy** (this repo’s `vercel.json` services): use your deployment origin plus the API prefix, e.g. `https://your-project.vercel.app/_/backend/api` (no trailing slash).
-   - **API hosted elsewhere** (Railway, Render, etc.): use that URL with `/api`, e.g. `https://your-backend.up.railway.app/api`.
-   Set `DATABASE_URL`, `JWT_SECRET`, and other vars from `backend/.env.example` on the Vercel project so the backend service can reach Postgres.
+2. In Vercel **Project → Settings → Environment Variables**, set:
+   - **`VITE_API_BASE_URL`** (frontend / Production): `https://your-project.vercel.app/_/backend/api` (no trailing slash). `*.vercel.app` hosts also default to `/_/backend/api` if this is unset. For an API on Railway/Render, use that origin plus `/api`.
+   - **`DATABASE_URL`** (backend / Production): a **hosted** Postgres URL (Neon, Supabase, Railway). Local `localhost` URLs do not work on Vercel. Remote hosts need SSL (the API enables it automatically).
+   - **`JWT_SECRET`** and the other vars from `backend/.env.example` on the **backend** service.
 3. Redeploy after changing env vars so Vite picks them up at build time.
+4. After deploy, open `https://your-project.vercel.app/_/backend/api/health`. You should see `"ok": true` and `"dbMode": "postgres"`. If `"ok"` is false, the JSON `error` field is the real login 500 cause.
 
 ## Custom domain (go live)
 

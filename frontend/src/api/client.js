@@ -1,9 +1,17 @@
 import axios from "axios";
 
-/** Local dev: Vite proxies `/api`. Production (e.g. Vercel): set `VITE_API_BASE_URL` to your API origin + `/api`. */
-const baseURL =
-  (import.meta.env.VITE_API_BASE_URL && String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, "")) ||
-  "/api";
+/** Local / same-origin: `/api`. Combined Vercel services: `/_/backend/api` unless VITE_API_BASE_URL is set. */
+function resolveApiBase() {
+  const configured =
+    import.meta.env.VITE_API_BASE_URL && String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, "");
+  if (configured) return configured;
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+    return "/_/backend/api";
+  }
+  return "/api";
+}
+
+const baseURL = resolveApiBase();
 
 const client = axios.create({
   baseURL,

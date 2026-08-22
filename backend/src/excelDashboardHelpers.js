@@ -1,5 +1,13 @@
 const ExcelJS = require("exceljs");
-const { renderChartPng } = require("./excelChartPng");
+
+function renderChartPng(chartType, rows, title) {
+  try {
+    return require("./excelChartPng").renderChartPng(chartType, rows, title);
+  } catch (error) {
+    console.warn("Chart PNG skipped:", error.message);
+    return null;
+  }
+}
 
 const BRAND = {
   blue: "FF0078C8",
