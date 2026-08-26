@@ -236,7 +236,7 @@ Configure in Claims → Notifications (**SMTP settings**) or `backend/.env` (`SM
 
 - **Immediate:** new claim logged; high-signal status changes (RA Issued, Released, Closed/Paid/Repudiated, Pending Documents, Awaiting Assessment, Litigation, Payment Processing). Optional: email on every status change.
 - **Daily 07:15:** ops digest of Pending Assessment, Pending Documents, Not Released, and Stuck >7 days, plus one-off chases at 8 / 15 / 30+ days open and configurable chase days for assessment, documents, and unreleased vehicles.
-- **Daily 17:30 EAT:** branded Excel of the claims register with **Motor** and **Non-Motor** tabs (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/_/backend/api/claims-notifications/cron/daily-register` at 14:30 UTC (17:30 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
+- **Daily 17:30 EAT:** branded Excel of **open** claims only, with **Motor** and **Non-Motor** tabs (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/_/backend/api/claims-notifications/cron/daily-register` at 14:30 UTC (17:30 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
 - Admins, Claims Officers, and Operations can click **Run now**. The send log is on the same page.
 
 ## Suggested Next Steps

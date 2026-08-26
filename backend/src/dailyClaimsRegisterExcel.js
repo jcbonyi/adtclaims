@@ -145,7 +145,7 @@ function addRegisterSheet(workbook, { name, tabColor, rows, generatedAt, logoIma
   sheet.getRow(4).height = 18;
 
   const asAt = sheet.getCell("A5");
-  asAt.value = `${sectionLabel} claims register as at ${nairobiDateTimeLabel(generatedAt)} EAT · ${rows.length} claim${
+  asAt.value = `Open ${sectionLabel.toLowerCase()} claims as at ${nairobiDateTimeLabel(generatedAt)} EAT · ${rows.length} claim${
     rows.length === 1 ? "" : "s"
   }`;
   asAt.font = { name: "Calibri", size: 9, italic: true, color: { argb: MUTED } };
@@ -190,7 +190,7 @@ function addRegisterSheet(workbook, { name, tabColor, rows, generatedAt, logoIma
   if (!rows.length) {
     sheet.mergeCells("A7:F7");
     const empty = sheet.getCell("A7");
-    empty.value = `No ${sectionLabel.toLowerCase()} claims in the register.`;
+    empty.value = `No open ${sectionLabel.toLowerCase()} claims in the register.`;
     empty.font = { name: "Calibri", size: 10, italic: true, color: { argb: MUTED } };
     empty.alignment = { vertical: "middle", horizontal: "center" };
   }
