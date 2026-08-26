@@ -21,6 +21,7 @@ const {
   nairobiDateString,
   nairobiDateTimeLabel,
   mapClaimRow,
+  isMotorClaim,
   buildDailyClaimsRegisterWorkbookBuffer,
 } = require("./dailyClaimsRegisterExcel");
 
@@ -268,11 +269,13 @@ async function runDailyClaimsRegisterEmail(pool, deps = {}) {
 
   const claimsRes = await pool.query(`
     SELECT insurer, cover_type, insured_name, registration_number,
-           reported_to_insurer_date, claim_status
+           reported_to_insurer_date, claim_status, claim_type
     FROM claims
     ORDER BY reported_to_broker_date DESC, id DESC
   `);
   const rows = claimsRes.rows.map(mapClaimRow);
+  const motorCount = rows.filter(isMotorClaim).length;
+  const nonMotorCount = rows.length - motorCount;
   const generatedAt = new Date();
   const asAt = nairobiDateTimeLabel(generatedAt);
   const dateLabel = nairobiDateString(generatedAt);
@@ -281,11 +284,12 @@ async function runDailyClaimsRegisterEmail(pool, deps = {}) {
   const subject = `ADT Claims Register — ${dateLabel}`;
   const text =
     `Please find attached the ADT claims register as at ${asAt} EAT.\n\n` +
-    `${rows.length} claim${rows.length === 1 ? "" : "s"} included.\n\n` +
+    `${rows.length} claim${rows.length === 1 ? "" : "s"} included ` +
+    `(Motor ${motorCount}, Non-Motor ${nonMotorCount}) on separate tabs.\n\n` +
     `${COMPANY.name}\n${COMPANY.tel}`;
   const html = `
     <p>Please find attached the <strong>ADT claims register</strong> as at ${asAt} EAT.</p>
-    <p>${rows.length} claim${rows.length === 1 ? "" : "s"} included (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status).</p>
+    <p>${rows.length} claim${rows.length === 1 ? "" : "s"} included (Motor ${motorCount}, Non-Motor ${nonMotorCount}). See the <strong>Motor</strong> and <strong>Non-Motor</strong> tabs (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status).</p>
     <p style="color:#475569;font-size:13px">${COMPANY.name}<br>${COMPANY.address1}<br>${COMPANY.address2}<br>${COMPANY.tel}</p>
   `;
 

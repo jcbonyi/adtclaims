@@ -68,6 +68,13 @@ export function Sidebar() {
   return (
     <aside className="adt-sidebar">
       <div className="adt-sidebar-brand">
+        <div className="adt-sidebar-logo-wrap">
+          <img
+            src="/adt-logo.png"
+            alt="adt africa Insurance Brokers Ltd"
+            style={{ width: "100%", maxWidth: 240, height: "auto", display: "block" }}
+          />
+        </div>
         <div className="adt-sidebar-app-name">Motor Valuations</div>
         <div style={{ fontSize: 12, color: "var(--adt-muted)", marginTop: 4 }}>
           2-day report turnaround

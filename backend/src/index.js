@@ -65,6 +65,13 @@ const {
 } = require("./claimStatuses");
 require("dotenv").config();
 
+const dns = require("node:dns");
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  /* Node version without setDefaultResultOrder */
+}
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -84,6 +91,38 @@ function hostedPostgresNeedsSsl(connectionString) {
   return true;
 }
 
+function databaseUrlLooksUnreachableFromVercel(conn) {
+  const value = String(conn || "");
+  return /localhost|127\.0\.0\.1|0\.0\.0\.0|::1|@(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/i.test(
+    value
+  );
+}
+
+/** Neon direct hosts often hang on Vercel IPv6; the pooler hostname is IPv4 + PgBouncer. */
+function preferServerlessDatabaseUrl(conn) {
+  const url = String(conn || "").trim();
+  if (!url) return url;
+  if (/\.neon\.tech/i.test(url) && !/-pooler\./i.test(url)) {
+    return url.replace(/(@ep-[a-z0-9-]+)\./i, "$1-pooler.");
+  }
+  return url;
+}
+
+function vercelDatabaseHint(error) {
+  const msg = String(error?.message || "database connection failed");
+  const conn = process.env.DATABASE_URL || "";
+  if (!conn) {
+    return `${msg}. Set DATABASE_URL on the Vercel backend service to a hosted Postgres URL (Neon pooled or Supabase pooler).`;
+  }
+  if (databaseUrlLooksUnreachableFromVercel(conn)) {
+    return `${msg}. DATABASE_URL points to localhost or a private network. Vercel cannot reach it — use Neon/Supabase/Railway, not your laptop or cPanel-only Postgres.`;
+  }
+  if (/timeout|terminated/i.test(msg)) {
+    return `${msg}. Vercel timed out reaching Postgres. Use the provider’s pooled URL (Neon: host contains -pooler; Supabase: pooler.supabase.com port 6543), allow public connections, then redeploy.`;
+  }
+  return msg;
+}
+
 function isPostgresUnreachable(error) {
   const code = error?.code;
   const msg = String(error?.message || "");
@@ -101,13 +140,19 @@ function isPostgresUnreachable(error) {
 function createDbPool(options = {}) {
   const { forceInMemory = false } = options;
   if (!forceInMemory && process.env.DATABASE_URL) {
-    const conn = process.env.DATABASE_URL;
+    const conn = preferServerlessDatabaseUrl(process.env.DATABASE_URL);
+    if (conn !== process.env.DATABASE_URL) {
+      console.warn("Using Neon pooled DATABASE_URL host (…-pooler…) for Vercel/serverless.");
+    }
     return {
       pool: new Pool({
         connectionString: conn,
         max: IS_VERCEL ? 1 : 10,
+        min: 0,
         connectionTimeoutMillis: IS_VERCEL ? 8000 : 5000,
-        idleTimeoutMillis: IS_VERCEL ? 5000 : 30000,
+        idleTimeoutMillis: IS_VERCEL ? 4000 : 30000,
+        allowExitOnIdle: IS_VERCEL,
+        keepAlive: true,
         ...(hostedPostgresNeedsSsl(conn)
           ? {
               ssl: { rejectUnauthorized: false },
@@ -209,7 +254,7 @@ app.use(async (req, res, next) => {
   }
   if (startupError && !dbReady) {
     return res.status(503).json({
-      message: `Database is not ready: ${startupError.message}`,
+      message: `Database is not ready: ${vercelDatabaseHint(startupError)}`,
     });
   }
   return next();
@@ -221,7 +266,7 @@ function sendHealth(_req, res) {
     ready: dbReady,
     dbMode,
     vercel: IS_VERCEL,
-    error: startupError ? startupError.message : null,
+    error: startupError ? vercelDatabaseHint(startupError) : null,
   });
 }
 app.get("/health", sendHealth);
@@ -2596,10 +2641,19 @@ async function seedOptionalData() {
 }
 
 async function startServer() {
+  if (IS_VERCEL && process.env.DATABASE_URL && databaseUrlLooksUnreachableFromVercel(process.env.DATABASE_URL)) {
+    throw new Error(
+      "DATABASE_URL points to localhost or a private network. Vercel cannot reach it — use Neon, Supabase, or Railway Postgres (pooled public URL)."
+    );
+  }
+
   try {
+    await pool.query("SELECT 1 AS ok");
     await ensureDb();
     await maybeLoadInMemorySnapshot();
-    await seedOptionalData();
+    if (!IS_VERCEL) {
+      await seedOptionalData();
+    }
     await loadSmtpFromDb(pool);
   } catch (error) {
     const canFallbackLocally =

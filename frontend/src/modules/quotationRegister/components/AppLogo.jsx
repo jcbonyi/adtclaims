@@ -5,14 +5,14 @@ export function AppLogo({ variant = 'sidebar', alt = 'adt africa Insurance Broke
     variant === 'sidebar'
       ? {
           width: '100%',
-          maxWidth: 220,
+          maxWidth: 240,
           height: 'auto',
           display: 'block',
         }
       : {
-          height: 44,
+          height: 52,
           width: 'auto',
-          maxWidth: 280,
+          maxWidth: 320,
           display: 'block',
         }
 

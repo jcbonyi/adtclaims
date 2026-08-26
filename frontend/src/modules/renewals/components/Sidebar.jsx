@@ -69,6 +69,13 @@ export function Sidebar({ failureCount = 0 }) {
   return (
     <aside className="adt-sidebar">
       <div className="adt-sidebar-brand">
+        <div className="adt-sidebar-logo-wrap">
+          <img
+            src="/adt-logo.png"
+            alt="adt africa Insurance Brokers Ltd"
+            style={{ width: "100%", maxWidth: 240, height: "auto", display: "block" }}
+          />
+        </div>
         <div className="adt-sidebar-app-name">Renewals</div>
         <div style={{ fontSize: 12, color: "var(--adt-muted)", marginTop: 4 }}>
           T-60 · T-30 · T-15 · T-7 · T-1

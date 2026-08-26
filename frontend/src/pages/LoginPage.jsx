@@ -76,8 +76,8 @@ export default function LoginPage() {
         <div className="mb-6 flex justify-center">
           <img
             src="/adt-logo.png"
-            alt="ADT Insurance"
-            className="h-12 w-auto max-w-full object-contain sm:h-14"
+            alt="adt africa Insurance Brokers Ltd"
+            className="h-20 w-auto max-w-[min(100%,20rem)] object-contain sm:h-24"
           />
         </div>
         <h1 className="adt-page-title text-center">ADT Insurance Platform</h1>

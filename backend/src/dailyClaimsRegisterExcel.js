@@ -77,19 +77,13 @@ function styleHeaderCell(cell) {
   cell.border = thinBorder;
 }
 
-/**
- * Excel matching the ADT claims-register letterhead:
- * logo + company block, then Insurer / Cover Type / Insured Name / Reg No /
- * Reported to Insurer / Status.
- */
-async function buildDailyClaimsRegisterWorkbookBuffer(rows, generatedAt = new Date()) {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = COMPANY.name;
-  workbook.created = generatedAt;
-  workbook.modified = generatedAt;
+function isMotorClaim(row) {
+  return String(row.claimType || row.claim_type || "").toUpperCase() === "MOTOR";
+}
 
-  const sheet = workbook.addWorksheet("Claims register", {
-    properties: { tabColor: { argb: HEADER_GREEN } },
+function addRegisterSheet(workbook, { name, tabColor, rows, generatedAt, logoImageId, sectionLabel }) {
+  const sheet = workbook.addWorksheet(name, {
+    properties: { tabColor: { argb: tabColor } },
     views: [{ state: "frozen", ySplit: 6, topLeftCell: "A7", activeCell: "A7" }],
   });
 
@@ -113,12 +107,10 @@ async function buildDailyClaimsRegisterWorkbookBuffer(rows, generatedAt = new Da
   sheet.mergeCells("D4:F4");
   sheet.mergeCells("A5:F5");
 
-  const logoPath = resolveLogoPath();
-  if (logoPath) {
-    const imageId = workbook.addImage({ filename: logoPath, extension: "png" });
-    sheet.addImage(imageId, {
-      tl: { col: 0.1, row: 0.15 },
-      ext: { width: 210, height: 58 },
+  if (logoImageId != null) {
+    sheet.addImage(logoImageId, {
+      tl: { col: 0.05, row: 0.1 },
+      ext: { width: 260, height: 88 },
     });
   } else {
     const brand = sheet.getCell("A1");
@@ -147,13 +139,13 @@ async function buildDailyClaimsRegisterWorkbookBuffer(rows, generatedAt = new Da
   tel.font = { name: "Calibri", size: 9, color: { argb: MUTED } };
   tel.alignment = { vertical: "middle", horizontal: "right" };
 
-  sheet.getRow(1).height = 20;
-  sheet.getRow(2).height = 16;
-  sheet.getRow(3).height = 16;
-  sheet.getRow(4).height = 16;
+  sheet.getRow(1).height = 24;
+  sheet.getRow(2).height = 18;
+  sheet.getRow(3).height = 18;
+  sheet.getRow(4).height = 18;
 
   const asAt = sheet.getCell("A5");
-  asAt.value = `Claims register as at ${nairobiDateTimeLabel(generatedAt)} EAT · ${rows.length} claim${
+  asAt.value = `${sectionLabel} claims register as at ${nairobiDateTimeLabel(generatedAt)} EAT · ${rows.length} claim${
     rows.length === 1 ? "" : "s"
   }`;
   asAt.font = { name: "Calibri", size: 9, italic: true, color: { argb: MUTED } };
@@ -198,18 +190,55 @@ async function buildDailyClaimsRegisterWorkbookBuffer(rows, generatedAt = new Da
   if (!rows.length) {
     sheet.mergeCells("A7:F7");
     const empty = sheet.getCell("A7");
-    empty.value = "No claims in the register.";
+    empty.value = `No ${sectionLabel.toLowerCase()} claims in the register.`;
     empty.font = { name: "Calibri", size: 10, italic: true, color: { argb: MUTED } };
     empty.alignment = { vertical: "middle", horizontal: "center" };
   }
 
-  sheet.headerFooter.oddFooter = `&L${COMPANY.slogan}&RPage &P of &N`;
+  sheet.headerFooter.oddFooter = `&L${COMPANY.slogan}&C${sectionLabel}&RPage &P of &N`;
+  return sheet;
+}
+
+/**
+ * Excel matching the ADT claims-register letterhead, with Motor and Non-Motor tabs.
+ */
+async function buildDailyClaimsRegisterWorkbookBuffer(rows, generatedAt = new Date()) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = COMPANY.name;
+  workbook.created = generatedAt;
+  workbook.modified = generatedAt;
+
+  const logoPath = resolveLogoPath();
+  const logoImageId = logoPath
+    ? workbook.addImage({ filename: logoPath, extension: "png" })
+    : null;
+
+  const motorRows = rows.filter(isMotorClaim);
+  const nonMotorRows = rows.filter((row) => !isMotorClaim(row));
+
+  addRegisterSheet(workbook, {
+    name: "Motor",
+    tabColor: "FF0078C8",
+    rows: motorRows,
+    generatedAt,
+    logoImageId,
+    sectionLabel: "Motor",
+  });
+  addRegisterSheet(workbook, {
+    name: "Non-Motor",
+    tabColor: HEADER_GREEN,
+    rows: nonMotorRows,
+    generatedAt,
+    logoImageId,
+    sectionLabel: "Non-Motor",
+  });
 
   return workbook.xlsx.writeBuffer();
 }
 
 function mapClaimRow(row) {
   return {
+    claimType: row.claim_type || "",
     insurer: row.insurer || "",
     coverType: row.cover_type || "",
     insuredName: row.insured_name || "",
@@ -225,5 +254,6 @@ module.exports = {
   nairobiDateTimeLabel,
   formatKenyaDate,
   mapClaimRow,
+  isMotorClaim,
   buildDailyClaimsRegisterWorkbookBuffer,
 };

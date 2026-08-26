@@ -25,12 +25,12 @@ export default function ShellLayout() {
           <Link
             to="/dashboard"
             className="flex-shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--adt-blue)] focus-visible:ring-offset-2"
-            aria-label="ADT — go to dashboard"
+            aria-label="adt africa Insurance Brokers Ltd — go to dashboard"
           >
             <img
               src="/adt-logo.png"
-              alt=""
-              className="h-9 w-auto max-h-10 max-w-[min(100%,14rem)] object-contain object-left sm:h-10"
+              alt="adt africa Insurance Brokers Ltd"
+              className="h-11 w-auto max-h-12 max-w-[min(100%,18rem)] object-contain object-left sm:h-12"
             />
           </Link>
           <div className="flex items-center gap-3">
