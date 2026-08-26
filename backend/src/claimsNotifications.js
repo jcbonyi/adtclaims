@@ -14,7 +14,21 @@ const {
   claimsOpsRecipients,
   isSmtpConfigured,
   isSmsConfigured,
+  applySmtpSettings,
 } = require("./notificationService");
+const {
+  COMPANY,
+  nairobiDateString,
+  nairobiDateTimeLabel,
+  mapClaimRow,
+  buildDailyClaimsRegisterWorkbookBuffer,
+} = require("./dailyClaimsRegisterExcel");
+
+const DEFAULT_DAILY_REGISTER_RECIPIENTS = [
+  "aisha@adtinsurance.co.ke",
+  "jacob@adtinsurance.co.ke",
+  "communications@adtinsurance.co.ke",
+];
 
 const CLOSED = new Set(CLOSED_STATUS_LIST);
 const HIGH_SIGNAL = new Set([
@@ -48,6 +62,13 @@ const SETTINGS_SNAPSHOT_COLUMNS = [
   "not_released_chase_days",
   "last_run_at",
   "last_digest_at",
+  "last_register_email_at",
+  "smtp_host",
+  "smtp_port",
+  "smtp_secure",
+  "smtp_user",
+  "smtp_pass",
+  "smtp_from",
   "updated_at",
 ];
 
@@ -95,8 +116,37 @@ async function ensureClaimsNotificationTables(pool) {
       not_released_chase_days INTEGER NOT NULL DEFAULT 5,
       last_run_at TIMESTAMPTZ NULL,
       last_digest_at TIMESTAMPTZ NULL,
+      last_register_email_at TIMESTAMPTZ NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS last_register_email_at TIMESTAMPTZ NULL;
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS smtp_host TEXT NOT NULL DEFAULT '';
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS smtp_port INTEGER NOT NULL DEFAULT 587;
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS smtp_secure BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS smtp_user TEXT NOT NULL DEFAULT '';
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS smtp_pass TEXT NOT NULL DEFAULT '';
+  `);
+  await pool.query(`
+    ALTER TABLE claim_settings
+      ADD COLUMN IF NOT EXISTS smtp_from TEXT NOT NULL DEFAULT '';
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS claim_notification_logs (
@@ -143,6 +193,142 @@ async function getSettings(pool) {
     not_released_chase_days: row.not_released_chase_days ?? 5,
     last_run_at: row.last_run_at || null,
     last_digest_at: row.last_digest_at || null,
+    last_register_email_at: row.last_register_email_at || null,
+    smtp_host: row.smtp_host || "",
+    smtp_port: row.smtp_port ?? 587,
+    smtp_secure: !!row.smtp_secure,
+    smtp_user: row.smtp_user || "",
+    smtp_pass: row.smtp_pass || "",
+    smtp_from: row.smtp_from || "",
+  };
+}
+
+function applySmtpFromSettings(settings) {
+  applySmtpSettings({
+    host: settings.smtp_host,
+    port: settings.smtp_port,
+    secure: settings.smtp_secure,
+    user: settings.smtp_user,
+    pass: settings.smtp_pass,
+    from: settings.smtp_from,
+  });
+}
+
+async function loadSmtpFromDb(pool) {
+  try {
+    applySmtpFromSettings(await getSettings(pool));
+  } catch (error) {
+    console.warn("Could not load SMTP settings from database:", error.message);
+  }
+}
+
+function parseEmailList(raw) {
+  return String(raw || "")
+    .split(/[,;\s]+/)
+    .map((e) => e.trim())
+    .filter((e) => e.includes("@"));
+}
+
+function dailyRegisterRecipients() {
+  const fromEnv = parseEmailList(process.env.CLAIMS_DAILY_REGISTER_EMAIL_LIST || "");
+  return fromEnv.length ? fromEnv : [...DEFAULT_DAILY_REGISTER_RECIPIENTS];
+}
+
+function alreadySentRegisterToday(settings) {
+  if (!settings?.last_register_email_at) return false;
+  return nairobiDateString(settings.last_register_email_at) === nairobiDateString();
+}
+
+function isCronAuthorized(req) {
+  const secret = String(process.env.CRON_SECRET || process.env.ADMIN_RESET_KEY || "").trim();
+  const auth = String(req.headers.authorization || "");
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  const header = String(req.headers["x-cron-secret"] || "").trim();
+  const query = String(req.query.secret || "").trim();
+  if (secret && (bearer === secret || header === secret || query === secret)) return true;
+  if (process.env.VERCEL && /vercel-cron/i.test(String(req.headers["user-agent"] || ""))) {
+    return true;
+  }
+  return false;
+}
+
+async function runDailyClaimsRegisterEmail(pool, deps = {}) {
+  const { force = false } = deps;
+  const settings = await getSettings(pool);
+  const to = dailyRegisterRecipients();
+  if (!force && alreadySentRegisterToday(settings)) {
+    return {
+      sent: false,
+      skipped: true,
+      reason: "already_sent_today",
+      recipients: to,
+      rowCount: 0,
+    };
+  }
+
+  const claimsRes = await pool.query(`
+    SELECT insurer, cover_type, insured_name, registration_number,
+           reported_to_insurer_date, claim_status
+    FROM claims
+    ORDER BY reported_to_broker_date DESC, id DESC
+  `);
+  const rows = claimsRes.rows.map(mapClaimRow);
+  const generatedAt = new Date();
+  const asAt = nairobiDateTimeLabel(generatedAt);
+  const dateLabel = nairobiDateString(generatedAt);
+  const filename = `ADT-claims-register-${dateLabel}.xlsx`;
+  const buffer = await buildDailyClaimsRegisterWorkbookBuffer(rows, generatedAt);
+  const subject = `ADT Claims Register — ${dateLabel}`;
+  const text =
+    `Please find attached the ADT claims register as at ${asAt} EAT.\n\n` +
+    `${rows.length} claim${rows.length === 1 ? "" : "s"} included.\n\n` +
+    `${COMPANY.name}\n${COMPANY.tel}`;
+  const html = `
+    <p>Please find attached the <strong>ADT claims register</strong> as at ${asAt} EAT.</p>
+    <p>${rows.length} claim${rows.length === 1 ? "" : "s"} included (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status).</p>
+    <p style="color:#475569;font-size:13px">${COMPANY.name}<br>${COMPANY.address1}<br>${COMPANY.address2}<br>${COMPANY.tel}</p>
+  `;
+
+  const result = await sendEmail({
+    to,
+    subject,
+    text,
+    html,
+    attachments: [
+      {
+        filename,
+        content: Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer),
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    ],
+  });
+
+  await insertLog(pool, deps.nextSerialId, deps.dbMode, {
+    claim_id: null,
+    event_type: "daily_register",
+    channel: "email",
+    recipient: to.join(", "),
+    status: result.sent ? "sent" : "failed",
+    error_message: result.sent ? null : result.reason || "not sent",
+    message_body: `${filename} · ${rows.length} claims`,
+  });
+
+  if (result.sent) {
+    await pool.query(
+      `UPDATE claim_settings SET last_register_email_at = NOW(), updated_at = NOW()
+       WHERE id = (SELECT id FROM claim_settings ORDER BY id ASC LIMIT 1)`
+    );
+  }
+  await deps.onPersist?.();
+
+  return {
+    sent: !!result.sent,
+    skipped: false,
+    reason: result.sent ? null : result.reason || "not sent",
+    recipients: to,
+    rowCount: rows.length,
+    filename,
+    asAt,
   };
 }
 
@@ -505,6 +691,7 @@ function registerClaimsNotificationRoutes(app, deps) {
   app.get("/api/claims-notifications/settings", authRequired, async (_, res) => {
     try {
       const settings = await getSettings(pool);
+      applySmtpFromSettings(settings);
       return res.json({
         opsEmailList: settings.ops_email_list || "",
         opsPhoneList: settings.ops_phone_list || "",
@@ -516,7 +703,15 @@ function registerClaimsNotificationRoutes(app, deps) {
         notReleasedChaseDays: settings.not_released_chase_days,
         lastRunAt: settings.last_run_at,
         lastDigestAt: settings.last_digest_at,
-        smtpConfigured: isSmtpConfigured(),
+        lastRegisterEmailAt: settings.last_register_email_at,
+        dailyRegisterRecipients: dailyRegisterRecipients(),
+        smtpHost: settings.smtp_host || "",
+        smtpPort: settings.smtp_port ?? 587,
+        smtpSecure: !!settings.smtp_secure,
+        smtpUser: settings.smtp_user || "",
+        smtpPassSet: Boolean(settings.smtp_pass),
+        smtpFrom: settings.smtp_from || "",
+        smtpConfigured: isSmtpConfigured() || Boolean(settings.smtp_host && settings.smtp_from),
         smsConfigured: isSmsConfigured(),
       });
     } catch (err) {
@@ -537,13 +732,24 @@ function registerClaimsNotificationRoutes(app, deps) {
           assessmentChaseDays: z.number().int().min(1).max(90).optional().default(3),
           documentsChaseDays: z.number().int().min(1).max(90).optional().default(5),
           notReleasedChaseDays: z.number().int().min(1).max(90).optional().default(5),
+          smtpHost: z.string().optional().default(""),
+          smtpPort: z.number().int().min(1).max(65535).optional().default(587),
+          smtpSecure: z.boolean().optional().default(false),
+          smtpUser: z.string().optional().default(""),
+          smtpPass: z.string().optional(),
+          smtpFrom: z.string().optional().default(""),
         })
         .parse(req.body);
+      const current = await getSettings(pool);
+      const nextPass =
+        body.smtpPass === undefined || body.smtpPass === "" ? current.smtp_pass : body.smtpPass;
       await pool.query(
         `UPDATE claim_settings SET
           ops_email_list = $1, ops_phone_list = $2, email_enabled = $3, sms_enabled = $4,
           notify_all_status_changes = $5, assessment_chase_days = $6, documents_chase_days = $7,
-          not_released_chase_days = $8, updated_at = NOW()
+          not_released_chase_days = $8,
+          smtp_host = $9, smtp_port = $10, smtp_secure = $11, smtp_user = $12, smtp_pass = $13, smtp_from = $14,
+          updated_at = NOW()
          WHERE id = (SELECT id FROM claim_settings ORDER BY id ASC LIMIT 1)`,
         [
           body.opsEmailList,
@@ -554,10 +760,25 @@ function registerClaimsNotificationRoutes(app, deps) {
           body.assessmentChaseDays,
           body.documentsChaseDays,
           body.notReleasedChaseDays,
+          body.smtpHost.trim(),
+          body.smtpPort,
+          body.smtpSecure,
+          body.smtpUser.trim(),
+          nextPass,
+          body.smtpFrom.trim(),
         ]
       );
+      applySmtpFromSettings({
+        ...current,
+        smtp_host: body.smtpHost.trim(),
+        smtp_port: body.smtpPort,
+        smtp_secure: body.smtpSecure,
+        smtp_user: body.smtpUser.trim(),
+        smtp_pass: nextPass,
+        smtp_from: body.smtpFrom.trim(),
+      });
       await onPersist?.();
-      return res.json({ ok: true });
+      return res.json({ ok: true, smtpConfigured: isSmtpConfigured() });
     } catch (err) {
       if (err?.issues) return res.status(400).json({ message: "Invalid settings" });
       console.error(err);
@@ -615,6 +836,27 @@ function registerClaimsNotificationRoutes(app, deps) {
       return res.status(500).json({ message: "Failed to send test email" });
     }
   });
+
+  async function handleDailyRegister(req, res, { force }) {
+    try {
+      const summary = await runDailyClaimsRegisterEmail(pool, { ...notifyDeps, force });
+      return res.json(summary);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ message: "Daily claims register email failed" });
+    }
+  }
+
+  app.post("/api/claims-notifications/daily-register", ...runGuard, async (req, res) => {
+    return handleDailyRegister(req, res, { force: true });
+  });
+
+  app.get("/api/claims-notifications/cron/daily-register", async (req, res) => {
+    if (!isCronAuthorized(req)) {
+      return res.status(401).json({ message: "Unauthorized cron request" });
+    }
+    return handleDailyRegister(req, res, { force: String(req.query.force || "") === "1" });
+  });
 }
 
 module.exports = {
@@ -624,6 +866,8 @@ module.exports = {
   ensureClaimsNotificationTables,
   registerClaimsNotificationRoutes,
   runClaimsAutomationJob,
+  runDailyClaimsRegisterEmail,
+  loadSmtpFromDb,
   notifyClaimCreated,
   notifyClaimStatusChange,
   getSettings,

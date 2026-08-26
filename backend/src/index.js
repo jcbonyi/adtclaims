@@ -55,6 +55,7 @@ const {
   notifyClaimStatusChange,
   CLAIM_SETTINGS_SNAPSHOT_COLUMNS,
   CLAIM_LOG_SNAPSHOT_COLUMNS,
+  loadSmtpFromDb,
 } = require("./claimsNotifications");
 const { startClaimScheduler } = require("./claimScheduler");
 const {
@@ -834,6 +835,13 @@ async function maybeLoadInMemorySnapshot() {
           assessment_chase_days: row.assessment_chase_days ?? 3,
           documents_chase_days: row.documents_chase_days ?? 5,
           not_released_chase_days: row.not_released_chase_days ?? 5,
+          last_register_email_at: row.last_register_email_at || null,
+          smtp_host: row.smtp_host || "",
+          smtp_port: row.smtp_port ?? 587,
+          smtp_secure: row.smtp_secure ?? false,
+          smtp_user: row.smtp_user || "",
+          smtp_pass: row.smtp_pass || "",
+          smtp_from: row.smtp_from || "",
         }))
       );
       await restoreSnapshotRows(
@@ -2592,6 +2600,7 @@ async function startServer() {
     await ensureDb();
     await maybeLoadInMemorySnapshot();
     await seedOptionalData();
+    await loadSmtpFromDb(pool);
   } catch (error) {
     const canFallbackLocally =
       !IS_VERCEL && dbMode === "postgres" && isPostgresUnreachable(error);
@@ -2609,6 +2618,7 @@ async function startServer() {
     await ensureDb();
     await maybeLoadInMemorySnapshot();
     await seedOptionalData();
+    await loadSmtpFromDb(pool);
   }
 
   registerQuotationRoutes(app, {

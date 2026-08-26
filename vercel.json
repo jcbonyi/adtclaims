@@ -11,5 +11,11 @@
       "routePrefix": "/_/backend",
       "framework": "express"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/_/backend/api/claims-notifications/cron/daily-register",
+      "schedule": "15 14 * * *"
+    }
+  ]
 }

@@ -5,9 +5,56 @@ const {
 } = require("./renewalOps");
 
 let transporter = null;
+let smtpOverride = null;
+
+function envSmtp() {
+  return {
+    host: String(process.env.SMTP_HOST || "").trim(),
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    user: String(process.env.SMTP_USER || "").trim(),
+    pass: String(process.env.SMTP_PASS || ""),
+    from: String(process.env.SMTP_FROM || "").trim(),
+  };
+}
+
+function applySmtpSettings(partial) {
+  const host = String(partial?.host || "").trim();
+  const from = String(partial?.from || "").trim();
+  if (!host && !from) {
+    smtpOverride = null;
+  } else {
+    smtpOverride = {
+      host,
+      port: Number(partial?.port || 587),
+      secure: !!partial?.secure,
+      user: String(partial?.user || "").trim(),
+      pass: String(partial?.pass || ""),
+      from,
+    };
+  }
+  transporter = null;
+}
+
+function resolvedSmtp() {
+  const env = envSmtp();
+  const db = smtpOverride;
+  if (db && (db.host || db.from)) {
+    return {
+      host: db.host || env.host,
+      port: Number(db.port || env.port || 587),
+      secure: db.host ? !!db.secure : env.secure,
+      user: db.user || env.user,
+      pass: db.pass || env.pass,
+      from: db.from || env.from,
+    };
+  }
+  return env;
+}
 
 function isSmtpConfigured() {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_FROM);
+  const cfg = resolvedSmtp();
+  return !!(cfg.host && cfg.from);
 }
 
 function isSmsConfigured() {
@@ -15,16 +62,14 @@ function isSmsConfigured() {
 }
 
 function getTransporter() {
-  if (!isSmtpConfigured()) return null;
+  const cfg = resolvedSmtp();
+  if (!cfg.host || !cfg.from) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === "true",
-      auth:
-        process.env.SMTP_USER && process.env.SMTP_PASS
-          ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-          : undefined,
+      host: cfg.host,
+      port: Number(cfg.port || 587),
+      secure: !!cfg.secure || Number(cfg.port) === 465,
+      auth: cfg.user && cfg.pass ? { user: cfg.user, pass: cfg.pass } : undefined,
     });
   }
   return transporter;
@@ -53,7 +98,7 @@ function renewalOpsRecipients(settingsOpsList) {
   return managementRecipients();
 }
 
-async function sendEmail({ to, subject, text, html }) {
+async function sendEmail({ to, subject, text, html, attachments }) {
   const transport = getTransporter();
   if (!transport || !to?.length) {
     console.log(`[notification skipped] ${subject} → ${Array.isArray(to) ? to.join(", ") : to}`);
@@ -63,11 +108,12 @@ async function sendEmail({ to, subject, text, html }) {
   if (!recipients.length) return { sent: false, reason: "no_recipient" };
 
   await transport.sendMail({
-    from: process.env.SMTP_FROM,
+    from: resolvedSmtp().from,
     to: recipients.join(", "),
     subject,
     text,
-    html: html || text.replace(/\n/g, "<br>"),
+    html: html || (text ? text.replace(/\n/g, "<br>") : undefined),
+    attachments: attachments?.length ? attachments : undefined,
   });
   return { sent: true };
 }
@@ -369,6 +415,8 @@ async function sendRenewalTestWhatsApp(to) {
 
 module.exports = {
   isSmtpConfigured,
+  applySmtpSettings,
+  resolvedSmtp,
   isSmsConfigured,
   isWhatsAppConfigured,
   notifyValuationEvent,

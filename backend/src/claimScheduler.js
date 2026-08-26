@@ -1,13 +1,32 @@
 const cron = require("node-cron");
-const { runClaimsAutomationJob } = require("./claimsNotifications");
+const { runClaimsAutomationJob, runDailyClaimsRegisterEmail } = require("./claimsNotifications");
+
+const NAIROBI = { timezone: "Africa/Nairobi" };
 
 function startClaimScheduler(pool, deps = {}) {
-  cron.schedule("15 7 * * *", () => {
-    runClaimsAutomationJob(pool, deps).catch((err) =>
-      console.error("Claims automation scheduler failed:", err)
-    );
-  });
-  console.log("Claims automation scheduler registered (daily 07:15 Africa/Nairobi if TZ set).");
+  cron.schedule(
+    "15 7 * * *",
+    () => {
+      runClaimsAutomationJob(pool, deps).catch((err) =>
+        console.error("Claims automation scheduler failed:", err)
+      );
+    },
+    NAIROBI
+  );
+
+  cron.schedule(
+    "15 17 * * *",
+    () => {
+      runDailyClaimsRegisterEmail(pool, deps).catch((err) =>
+        console.error("Daily claims register email failed:", err)
+      );
+    },
+    NAIROBI
+  );
+
+  console.log(
+    "Claims schedulers registered: 07:15 digest and 17:15 register email (Africa/Nairobi)."
+  );
 }
 
 module.exports = { startClaimScheduler };

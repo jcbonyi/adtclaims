@@ -256,7 +256,7 @@ export default function DashboardPage() {
     <section className="space-y-4">
       {notifyInfo && !notifyInfo.smtpConfigured ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Claims email alerts are ready but SMTP is not configured. Set <code>SMTP_HOST</code> / <code>SMTP_FROM</code> or open{" "}
+          Claims email alerts are ready but SMTP is not configured. Enter host, from address, and login under{" "}
           <Link className="font-semibold underline" to="/claims/notifications">
             Claims → Notifications
           </Link>

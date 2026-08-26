@@ -17,6 +17,7 @@ const EVENT_LABELS = {
   pending_documents: "Pending documents",
   not_released: "Not released",
   daily_digest: "Daily digest",
+  daily_register: "Daily register",
 };
 
 export default function ClaimsNotificationsPage() {
@@ -60,8 +61,14 @@ export default function ClaimsNotificationsPage() {
         assessmentChaseDays: Number(form.assessmentChaseDays),
         documentsChaseDays: Number(form.documentsChaseDays),
         notReleasedChaseDays: Number(form.notReleasedChaseDays),
+        smtpHost: form.smtpHost || "",
+        smtpPort: Number(form.smtpPort) || 587,
+        smtpSecure: !!form.smtpSecure,
+        smtpUser: form.smtpUser || "",
+        smtpPass: form.smtpPass || "",
+        smtpFrom: form.smtpFrom || "",
       });
-      setMessage("Settings saved.");
+      setMessage("Settings saved. Daily register and other claim emails will use these SMTP settings.");
       await load(statusFilter);
     } catch (err) {
       setMessage(err.response?.data?.message || "Save failed");
@@ -82,6 +89,28 @@ export default function ClaimsNotificationsPage() {
       await load(statusFilter);
     } catch (err) {
       setMessage(err.response?.data?.message || "Job failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendRegister() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await client.post("/claims-notifications/daily-register");
+      if (res.data.skipped) {
+        setMessage("Register email already sent today. Use this button only if you need a fresh copy — it always resends from here.");
+      } else if (res.data.sent) {
+        setMessage(
+          `Register emailed to ${Array.isArray(res.data.recipients) ? res.data.recipients.join(", ") : "recipients"} (${res.data.rowCount} claims).`
+        );
+      } else {
+        setMessage(`Register email not sent: ${res.data.reason || "unknown"}. Confirm SMTP is configured.`);
+      }
+      await load(statusFilter);
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Register email failed");
     } finally {
       setBusy(false);
     }
@@ -114,7 +143,7 @@ export default function ClaimsNotificationsPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Claims notifications</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Email (and optional SMS) when claims are logged or move to high-signal statuses, plus a daily 07:15 EAT digest of the operations queues. Aging chases fire once at 8, 15, and 30+ days.
+          Email (and optional SMS) when claims are logged or move to high-signal statuses, a daily 07:15 EAT ops digest, and a daily 17:15 EAT claims-register Excel to Aisha, Jacob, and Communications.
         </p>
       </div>
 
@@ -132,11 +161,86 @@ export default function ClaimsNotificationsPage() {
         <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
           Last run: {form.lastRunAt ? new Date(form.lastRunAt).toLocaleString() : "never"}
         </span>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
+          Last register email: {form.lastRegisterEmailAt ? new Date(form.lastRegisterEmailAt).toLocaleString() : "never"}
+        </span>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-base font-semibold text-slate-900">Settings</h2>
+          <h2 className="mb-1 text-base font-semibold text-slate-900">SMTP settings</h2>
+          <p className="mb-3 text-sm text-slate-600">
+            Used to send the daily 17:15 EAT claims-register Excel and all other claims emails. Saved here (not only in server env).
+          </p>
+          <div className="mb-3 grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1 block text-slate-600">SMTP host</span>
+              <input
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={form.smtpHost || ""}
+                disabled={!canSettings}
+                onChange={(e) => patch("smtpHost", e.target.value)}
+                placeholder="smtp.office365.com or mail.adtinsurance.co.ke"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Port</span>
+              <input
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                type="number"
+                min="1"
+                value={form.smtpPort ?? 587}
+                disabled={!canSettings}
+                onChange={(e) => patch("smtpPort", e.target.value)}
+                placeholder="587"
+              />
+            </label>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!form.smtpSecure}
+                disabled={!canSettings}
+                onChange={(e) => patch("smtpSecure", e.target.checked)}
+              />
+              Use SSL (port 465). Leave off for STARTTLS on 587.
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="mb-1 block text-slate-600">From address</span>
+              <input
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={form.smtpFrom || ""}
+                disabled={!canSettings}
+                onChange={(e) => patch("smtpFrom", e.target.value)}
+                placeholder="claims@adtinsurance.co.ke"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Username</span>
+              <input
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                value={form.smtpUser || ""}
+                disabled={!canSettings}
+                onChange={(e) => patch("smtpUser", e.target.value)}
+                placeholder="SMTP login"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-slate-600">Password</span>
+              <input
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                type="password"
+                value={form.smtpPass || ""}
+                disabled={!canSettings}
+                onChange={(e) => patch("smtpPass", e.target.value)}
+                placeholder={form.smtpPassSet ? "Leave blank to keep the saved password" : "SMTP password"}
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
+          <h2 className="mb-3 mt-2 text-base font-semibold text-slate-900">Notification options</h2>
           <label className="mb-2 flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.emailEnabled} disabled={!canSettings} onChange={(e) => patch("emailEnabled", e.target.checked)} />
             Enable email
@@ -201,12 +305,21 @@ export default function ClaimsNotificationsPage() {
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <h2 className="mb-2 text-base font-semibold text-slate-900">Run automations</h2>
             <p className="mb-3 text-sm text-slate-600">
-              Daily job is 07:15. It emails the ops digest (same four dashboard queues) and one-off chases for aging / stuck assessment, documents, and unreleased vehicles.
+              Daily 07:15 EAT sends the ops digest and aging chases. Daily 17:15 EAT emails the branded claims-register Excel
+              {form.dailyRegisterRecipients?.length
+                ? ` to ${form.dailyRegisterRecipients.join(", ")}`
+                : ""}
+              .
             </p>
             {canRun ? (
-              <button type="button" className="adt-btn adt-btn-primary" onClick={handleRun} disabled={busy}>
-                Run now
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="adt-btn adt-btn-primary" onClick={handleRun} disabled={busy}>
+                  Run now
+                </button>
+                <button type="button" className="adt-btn adt-btn-secondary" onClick={handleSendRegister} disabled={busy}>
+                  Send register now
+                </button>
+              </div>
             ) : (
               <p className="text-xs text-slate-500">Your role can view the log but not run the job.</p>
             )}
