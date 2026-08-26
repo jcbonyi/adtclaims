@@ -15,7 +15,7 @@
   "crons": [
     {
       "path": "/_/backend/api/claims-notifications/cron/daily-register",
-      "schedule": "15 14 * * *"
+      "schedule": "30 14 * * *"
     }
   ]
 }

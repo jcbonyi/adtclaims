@@ -132,6 +132,25 @@ The repo includes [`vercel.json`](vercel.json) with **Services** entries `fronte
 3. Redeploy after changing env vars so Vite picks them up at build time.
 4. After deploy, open `https://your-project.vercel.app/_/backend/api/health`. You should see `"ok": true` and `"dbMode": "postgres"`. If `"ok"` is false, the JSON `error` field is the real login 500 cause.
 
+### Vercel SMTP (daily claims-register email)
+
+The 17:30 EAT Excel is sent with **Nodemailer SMTP**. Values in your laptop `.env` or the local Notifications form are **not** used on Vercel. Add these on **Project → Settings → Environment Variables**, environment **Production**, and attach them to the **backend** service if Vercel shows a service picker:
+
+| Name | Example |
+| --- | --- |
+| `SMTP_HOST` | `smtp.office365.com` or `mail.adtinsurance.co.ke` |
+| `SMTP_PORT` | `587` (STARTTLS) or `465` (SSL) |
+| `SMTP_SECURE` | `false` for 587; `true` for 465 |
+| `SMTP_USER` | full mailbox, e.g. `claims@adtinsurance.co.ke` |
+| `SMTP_PASS` | mailbox password or app password |
+| `SMTP_FROM` | same as user, or a permitted from-address |
+| `CRON_SECRET` | any long random string (Vercel Cron sends it as `Authorization: Bearer`) |
+| `ADMIN_RESET_KEY` | already used by the app; cron also accepts this if `CRON_SECRET` is unset |
+
+Then **Deployments → … → Redeploy** (env is applied on a new deploy). Open the **live** site → Claims → Notifications: SMTP should read **configured**. Click **Send register now** (do not wait for 17:30). Check the send log on that page and **Vercel → backend → Logs** if it still fails.
+
+The scheduled send uses Vercel Cron at **14:30 UTC** (`vercel.json` → 17:30 EAT). Hobby allows one daily cron. SMTP saved only in the in-app form is lost on Vercel unless `DATABASE_URL` is hosted Postgres; prefer the env vars above.
+
 ## Custom domain (go live)
 
 Use your own domain (e.g. `claims.example.com` or `example.com`) with the same Vercel project.
@@ -217,7 +236,7 @@ Configure in Claims → Notifications (**SMTP settings**) or `backend/.env` (`SM
 
 - **Immediate:** new claim logged; high-signal status changes (RA Issued, Released, Closed/Paid/Repudiated, Pending Documents, Awaiting Assessment, Litigation, Payment Processing). Optional: email on every status change.
 - **Daily 07:15:** ops digest of Pending Assessment, Pending Documents, Not Released, and Stuck >7 days, plus one-off chases at 8 / 15 / 30+ days open and configurable chase days for assessment, documents, and unreleased vehicles.
-- **Daily 17:15 EAT:** branded Excel of the claims register (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/_/backend/api/claims-notifications/cron/daily-register` at 14:15 UTC (17:15 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
+- **Daily 17:30 EAT:** branded Excel of the claims register (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/_/backend/api/claims-notifications/cron/daily-register` at 14:30 UTC (17:30 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
 - Admins, Claims Officers, and Operations can click **Run now**. The send log is on the same page.
 
 ## Suggested Next Steps

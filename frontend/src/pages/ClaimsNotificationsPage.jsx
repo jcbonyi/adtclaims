@@ -143,7 +143,7 @@ export default function ClaimsNotificationsPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Claims notifications</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Email (and optional SMS) when claims are logged or move to high-signal statuses, a daily 07:15 EAT ops digest, and a daily 17:15 EAT claims-register Excel to Aisha, Jacob, and Communications.
+          Email (and optional SMS) when claims are logged or move to high-signal statuses, a daily 07:15 EAT ops digest, and a daily 17:30 EAT claims-register Excel to Aisha, Jacob, and Communications.
         </p>
       </div>
 
@@ -170,7 +170,7 @@ export default function ClaimsNotificationsPage() {
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <h2 className="mb-1 text-base font-semibold text-slate-900">SMTP settings</h2>
           <p className="mb-3 text-sm text-slate-600">
-            Used to send the daily 17:15 EAT claims-register Excel and all other claims emails. Saved here (not only in server env).
+            Used to send the daily 17:30 EAT claims-register Excel and all other claims emails. Saved here (not only in server env).
           </p>
           <div className="mb-3 grid gap-3 sm:grid-cols-2">
             <label className="block text-sm sm:col-span-2">
@@ -305,7 +305,7 @@ export default function ClaimsNotificationsPage() {
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <h2 className="mb-2 text-base font-semibold text-slate-900">Run automations</h2>
             <p className="mb-3 text-sm text-slate-600">
-              Daily 07:15 EAT sends the ops digest and aging chases. Daily 17:15 EAT emails the branded claims-register Excel
+              Daily 07:15 EAT sends the ops digest and aging chases. Daily 17:30 EAT emails the branded claims-register Excel
               {form.dailyRegisterRecipients?.length
                 ? ` to ${form.dailyRegisterRecipients.join(", ")}`
                 : ""}

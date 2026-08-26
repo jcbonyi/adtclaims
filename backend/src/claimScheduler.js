@@ -15,7 +15,7 @@ function startClaimScheduler(pool, deps = {}) {
   );
 
   cron.schedule(
-    "15 17 * * *",
+    "30 17 * * *",
     () => {
       runDailyClaimsRegisterEmail(pool, deps).catch((err) =>
         console.error("Daily claims register email failed:", err)
@@ -25,7 +25,7 @@ function startClaimScheduler(pool, deps = {}) {
   );
 
   console.log(
-    "Claims schedulers registered: 07:15 digest and 17:15 register email (Africa/Nairobi)."
+    "Claims schedulers registered: 07:15 digest and 17:30 register email (Africa/Nairobi)."
   );
 }
 
