@@ -66,3 +66,24 @@ export const STATUS_OPTIONS = [
 export function isPlacedStatus(status) {
   return PLACED_STATUSES.has(status)
 }
+
+export const KPI_FILTER_LABELS = {
+  total: "All quotations",
+  awaiting: "Awaiting decision",
+  placed: "Cover placed",
+  hold: "On hold / Declined",
+}
+
+export function filterQuotationsByKpi(quotations, kpi) {
+  if (!kpi || kpi === "total") return quotations
+  switch (kpi) {
+    case "awaiting":
+      return quotations.filter((q) => q.status === "Client to advise" || q.status === "Pending")
+    case "placed":
+      return quotations.filter((q) => isPlacedStatus(q.status))
+    case "hold":
+      return quotations.filter((q) => q.status === "On hold" || q.status === "Declined")
+    default:
+      return quotations
+  }
+}

@@ -11,6 +11,7 @@ import { ClientDetail } from "./components/ClientDetail";
 import { useQuotations } from "./context/useQuotations";
 import { useUi } from "./context/uiContext";
 import { quotationPath } from "./basePath";
+import { LoadingState } from "./components/ui";
 import { QuickSearchModal } from "./components/QuickSearchModal";
 import "./quotationRegister.css";
 
@@ -49,8 +50,8 @@ function QuotationShell() {
 
   if (!state.ready) {
     return (
-      <div className="quotation-module-root" style={{ padding: 24 }}>
-        <p>Loading quotation register…</p>
+      <div className="quotation-module-root">
+        <LoadingState label="Loading quotation register…" />
       </div>
     )
   }

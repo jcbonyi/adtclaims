@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FILTERS_STORAGE_KEY, THEME } from '../constants'
+import { Link, useSearchParams } from 'react-router-dom'
+import { FILTERS_STORAGE_KEY, KPI_FILTER_LABELS, THEME, filterQuotationsByKpi } from '../constants'
+import { quotationPath } from '../basePath'
 import { useQuotations } from '../context/useQuotations'
 import { useUi } from '../context/uiContext'
 import { daysOpen, formatDisplayDate } from '../utils/dates'
@@ -26,6 +28,9 @@ export function Register({
   const { notify } = useUi()
   const { quotations } = state
   const importRef = useRef(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const kpiFilter = searchParams.get('kpi') || ''
+  const kpiLabel = kpiFilter && kpiFilter !== 'total' ? KPI_FILTER_LABELS[kpiFilter] : ''
 
   const [search, setSearch] = useState(() => sessionStorage.getItem(`${FILTERS_STORAGE_KEY}:search`) || '')
   const [fStatus, setFStatus] = useState(() => sessionStorage.getItem(`${FILTERS_STORAGE_KEY}:status`) || '')
@@ -63,7 +68,8 @@ export function Register({
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase()
-    return quotations.filter((q) => {
+    const scoped = filterQuotationsByKpi(quotations, kpiFilter)
+    return scoped.filter((q) => {
       if (fStatus && q.status !== fStatus) return false
       if (fCover && q.coverType !== fCover) return false
       if (fInsurer && q.insurer !== fInsurer) return false
@@ -82,7 +88,7 @@ export function Register({
         .toLowerCase()
       return blob.includes(s)
     })
-  }, [quotations, search, fStatus, fCover, fInsurer, fAgent])
+  }, [quotations, search, fStatus, fCover, fInsurer, fAgent, kpiFilter])
 
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1
@@ -137,6 +143,16 @@ export function Register({
   }
 
   const selectClass = 'adt-select'
+  const hasActiveFilters = Boolean(search || fStatus || fCover || fInsurer || fAgent || kpiFilter)
+
+  function clearFilters() {
+    setSearch('')
+    setFStatus('')
+    setFCover('')
+    setFInsurer('')
+    setFAgent('')
+    if (kpiFilter) setSearchParams({})
+  }
 
   const handleExport = async () => {
     setExporting(true)
@@ -210,7 +226,11 @@ export function Register({
     <>
       <PageHeader
         title="Quotation Register"
-        subtitle={`Showing ${sorted.length} of ${quotations.length} records.`}
+        subtitle={
+          kpiLabel
+            ? `${kpiLabel} — showing ${sorted.length} record${sorted.length === 1 ? '' : 's'}`
+            : `Showing ${sorted.length} of ${quotations.length} records.`
+        }
         actions={(
           <>
             <Button tone="accent" onClick={() => setAddOpen(true)}>+ Add new quotation</Button>
@@ -228,6 +248,15 @@ export function Register({
           </>
         )}
       />
+
+      {kpiLabel ? (
+        <div className="adt-kpi-filter-banner" role="status">
+          Dashboard filter: <strong>{kpiLabel}</strong>
+          <Link to={quotationPath('register')} className="adt-link-btn" style={{ marginLeft: 4 }}>
+            Clear filter
+          </Link>
+        </div>
+      ) : null}
 
       <div className="adt-filter-bar">
         <div className="adt-search-wrap">
@@ -263,19 +292,29 @@ export function Register({
             <option key={x} value={x}>{x}</option>
           ))}
         </select>
-        <Button
-          onClick={() => {
-            setSearch('')
-            setFStatus('')
-            setFCover('')
-            setFInsurer('')
-            setFAgent('')
-          }}
-        >
+        <Button onClick={clearFilters} disabled={!hasActiveFilters}>
           Clear filters
         </Button>
       </div>
 
+      {sorted.length === 0 ? (
+        <Card>
+          <EmptyState
+            title={quotations.length === 0 ? 'No quotations yet' : 'No matching quotations'}
+            action={
+              quotations.length === 0 ? (
+                <Button tone="accent" onClick={() => setAddOpen(true)}>+ Add new quotation</Button>
+              ) : (
+                <Button onClick={clearFilters}>Clear filters</Button>
+              )
+            }
+          >
+            {quotations.length === 0
+              ? 'Add a quotation or import a CSV to start tracking the pipeline.'
+              : 'Try a different search or clear filters to see more records.'}
+          </EmptyState>
+        </Card>
+      ) : (
       <Card>
         <div className="adt-table-wrap">
           <table className="adt-table">
@@ -304,10 +343,14 @@ export function Register({
               {sorted.map((q) => {
                 const dOpen = daysOpen(q.dateReceived)
                 return (
-                  <tr key={q.id}>
+                  <tr
+                    key={q.id}
+                    className="adt-row-clickable"
+                    onClick={() => onView(q.id)}
+                  >
                     <td style={{ color: THEME.textMuted, fontSize: 13 }}>{q.id}</td>
                     <td>
-                      <LinkButton onClick={() => onView(q.id)}>{q.clientName}</LinkButton>
+                      <LinkButton onClick={(e) => { e.stopPropagation(); onView(q.id) }}>{q.clientName}</LinkButton>
                     </td>
                     <td>{q.coverType}</td>
                     <td>{q.contactPerson}</td>
@@ -323,7 +366,7 @@ export function Register({
                     </td>
                     <td>{q.insurer}</td>
                     <td><StatusBadge status={q.status} /></td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <select
                         aria-label={`Actions for ${q.clientName}`}
                         className={selectClass}
@@ -350,10 +393,8 @@ export function Register({
             </tbody>
           </table>
         </div>
-        {sorted.length === 0 && (
-          <EmptyState>No quotations match your filters.</EmptyState>
-        )}
       </Card>
+      )}
 
       {addOpen && (
         <QuotationFormModal

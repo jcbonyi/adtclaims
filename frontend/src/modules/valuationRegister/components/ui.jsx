@@ -69,11 +69,12 @@ export function LinkButton({ children, onClick, className = "" }) {
   );
 }
 
-export function EmptyState({ title, children }) {
+export function EmptyState({ title, children, action }) {
   return (
     <div className="adt-table-empty val-empty">
       {title ? <strong className="val-empty-title">{title}</strong> : null}
       <p>{children}</p>
+      {action ? <div className="adt-empty-action">{action}</div> : null}
     </div>
   );
 }

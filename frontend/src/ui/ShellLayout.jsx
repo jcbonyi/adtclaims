@@ -1,5 +1,10 @@
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { quotationPath } from "../modules/quotationRegister/basePath";
+import { valuationPath } from "../modules/valuationRegister/basePath";
+import { canManageValuers } from "../modules/valuationRegister/constants";
+import { renewalsPath } from "../modules/renewals/basePath";
+import { canManageRenewalSettings } from "../modules/renewals/constants";
 
 function navPill({ isActive }) {
   return `adt-nav-pill${isActive ? " adt-nav-pill--active" : ""}`;
@@ -19,6 +24,9 @@ export default function ShellLayout() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--adt-page)" }}>
+      <a href="#main-content" className="adt-skip-link">
+        Skip to content
+      </a>
       <div className="adt-brand-bar" aria-hidden="true" />
       <header className="adt-shell-header">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -90,19 +98,75 @@ export default function ShellLayout() {
                 </NavLink>
               ) : null}
             </nav>
-          ) : (
-            <p className="mt-2 text-sm text-slate-500">
-              Use the sidebar inside{" "}
-              {isValuations ? "Motor Valuations" : isRenewals ? "Renewals" : "Quotation Register"} to navigate.
-            </p>
-          )}
+          ) : null}
+          {isQuotations ? (
+            <nav className="adt-subnav mt-3" aria-label="Quotation navigation">
+              <NavLink to={quotationPath("dashboard")} end className={navPill}>
+                Dashboard
+              </NavLink>
+              <NavLink to={quotationPath("register")} className={navPill}>
+                Register
+              </NavLink>
+              <NavLink to={quotationPath("followup")} className={navPill}>
+                Follow-up
+              </NavLink>
+              <NavLink to={quotationPath("analytics")} className={navPill}>
+                Analytics
+              </NavLink>
+            </nav>
+          ) : null}
+          {isValuations ? (
+            <nav className="adt-subnav mt-3" aria-label="Valuation navigation">
+              <NavLink to={valuationPath("dashboard")} end className={navPill}>
+                Dashboard
+              </NavLink>
+              <NavLink to={valuationPath("register")} className={navPill}>
+                Register
+              </NavLink>
+              <NavLink to={valuationPath("followup")} className={navPill}>
+                Follow-up
+              </NavLink>
+              <NavLink to={valuationPath("analytics")} className={navPill}>
+                Analytics
+              </NavLink>
+              {canManageValuers(user?.role) ? (
+                <NavLink to={valuationPath("valuers")} className={navPill}>
+                  Valuers
+                </NavLink>
+              ) : null}
+            </nav>
+          ) : null}
+          {isRenewals ? (
+            <nav className="adt-subnav mt-3" aria-label="Renewals navigation">
+              <NavLink to={renewalsPath("dashboard")} end className={navPill}>
+                Dashboard
+              </NavLink>
+              <NavLink to={renewalsPath("register")} className={navPill}>
+                Register
+              </NavLink>
+              <NavLink to={renewalsPath("analytics")} className={navPill}>
+                Production
+              </NavLink>
+              <NavLink to={renewalsPath("failures")} className={navPill}>
+                Failures
+              </NavLink>
+              <NavLink to={renewalsPath("log")} className={navPill}>
+                Send log
+              </NavLink>
+              <NavLink to={renewalsPath("financiers")} className={navPill}>
+                Financiers
+              </NavLink>
+              {canManageRenewalSettings(user?.role) ? (
+                <NavLink to={renewalsPath("settings")} className={navPill}>
+                  Settings
+                </NavLink>
+              ) : null}
+            </nav>
+          ) : null}
         </div>
       </header>
 
-      <main
-        id="main-content"
-        className={isClaimsModule ? "mx-auto max-w-7xl px-4 pb-10 pt-2" : "pb-8"}
-      >
+      <main id="main-content" className="mx-auto max-w-7xl px-4 pb-10 pt-2">
         <Outlet />
       </main>
     </div>

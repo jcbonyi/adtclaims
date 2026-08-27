@@ -33,7 +33,7 @@ export function ClientDetail() {
   if (!q) {
     return (
       <>
-        <EmptyState>Record not found.</EmptyState>
+        <EmptyState title="Record not found">This quotation is not in the register.</EmptyState>
         <Button onClick={() => navigate(backPath)} style={{ marginTop: 12 }}>← Back</Button>
       </>
     )
@@ -48,35 +48,25 @@ export function ClientDetail() {
 
   return (
     <>
-      <PageHeader title="Client Detail" subtitle="Quotation overview, timeline, and follow-up history." />
-
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 12,
-          alignItems: 'center',
-          padding: '16px 20px',
-          background: 'linear-gradient(135deg, var(--adt-blue-light) 0%, var(--adt-green-light) 100%)',
-          borderRadius: 'var(--adt-radius)',
-          border: '1px solid var(--adt-border)',
-        }}
-      >
-        <Button onClick={() => navigate(backPath)}>← Back</Button>
-        <h2 style={{ margin: 0, flex: 1, fontSize: 22, color: THEME.brandBlueDark, letterSpacing: '-0.02em' }}>
-          {q.clientName}
-        </h2>
-        <Button tone="accent" onClick={() => setFollowOpen(true)}>Log follow-up</Button>
-        {q.policyNumber ? (
-          <Button
-            tone="navy"
-            onClick={() => navigate(`/valuations/valuation/new?fromQuotation=${q.id}`)}
-          >
-            Create Valuation
-          </Button>
-        ) : null}
-        <Button tone="primary" onClick={() => setEditOpen(true)}>Edit</Button>
-      </div>
+      <PageHeader
+        title={q.clientName}
+        subtitle="Quotation overview, timeline, and follow-up history."
+        actions={(
+          <>
+            <Button onClick={() => navigate(backPath)}>← Back</Button>
+            <Button tone="accent" onClick={() => setFollowOpen(true)}>Log follow-up</Button>
+            {q.policyNumber ? (
+              <Button
+                tone="navy"
+                onClick={() => navigate(`/valuations/valuation/new?fromQuotation=${q.id}`)}
+              >
+                Create Valuation
+              </Button>
+            ) : null}
+            <Button tone="primary" onClick={() => setEditOpen(true)}>Edit</Button>
+          </>
+        )}
+      />
 
       <div className="adt-detail-grid">
         <Card style={{ padding: '8px 20px 20px' }} hover>
@@ -127,7 +117,7 @@ export function ClientDetail() {
       <Card style={{ padding: 20 }} hover>
         <CardTitle>Follow-up log</CardTitle>
         {q.followUpHistory.length === 0 ? (
-          <EmptyState>No follow-up entries recorded.</EmptyState>
+          <EmptyState title="No follow-ups yet">No follow-up entries recorded.</EmptyState>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {[...q.followUpHistory].reverse().map((e, i) => (

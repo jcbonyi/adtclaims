@@ -125,6 +125,84 @@ body {
   color: var(--adt-blue-dark);
 }
 
+.adt-skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 100;
+  border-radius: 8px;
+  background: var(--adt-blue);
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.adt-skip-link:focus {
+  top: 12px;
+}
+
+.adt-workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--adt-border);
+}
+
+.adt-workspace-kicker {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--adt-blue);
+}
+
+.adt-workspace-hint {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  color: var(--adt-muted);
+}
+
+.adt-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.adt-workspace-search kbd {
+  margin-left: 2px;
+  border: 1px solid var(--adt-border);
+  border-radius: 4px;
+  background: var(--adt-page);
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.adt-workspace-alert {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.adt-workspace-alert:hover {
+  background: #fee2e2;
+}
+
 /* —— Shared UI —— */
 .adt-card {
   border-radius: var(--adt-radius);

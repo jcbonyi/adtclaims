@@ -72,9 +72,9 @@ export function Dashboard({ onOpenPolicy }) {
         <KpiCard label="Due 0–15 days" value={kpis.t15} onClick={() => navigate(renewalsPath("register?window=t15"))} />
         <KpiCard label="Due 61+ days" value={kpis.later ?? 0} onClick={() => navigate(renewalsPath("register?window=later"))} />
         <KpiCard label="Overdue" value={kpis.overdue} onClick={() => navigate(renewalsPath("register?window=overdue"))} />
-        <KpiCard label="Quoted" value={kpis.quoted ?? 0} onClick={() => navigate(renewalsPath("register?pipeline=Quoted"))} />
-        <KpiCard label="Awaiting payment" value={kpis.awaiting_payment ?? 0} />
-        <KpiCard label="Bound" value={kpis.bound ?? 0} />
+        <KpiCard label="Quoted" value={kpis.quoted ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Quoted")}`))} />
+        <KpiCard label="Awaiting payment" value={kpis.awaiting_payment ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Awaiting payment")}`))} />
+        <KpiCard label="Bound" value={kpis.bound ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Bound")}`))} />
         <KpiCard label="Premium at risk" value={kpis.premium_at_risk ? `KES ${Number(kpis.premium_at_risk).toLocaleString()}` : "—"} />
         <KpiCard
           label="Open failures"

@@ -26,7 +26,7 @@ import { AlertBanner, Button, Card, EmptyState, FilterBar, PageHeader } from "./
 export function Register({ policies, onView, onCreate, onReload }) {
   const { user } = useAuth();
   const importRef = useRef(null);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const windowFilter = searchParams.get("window") || "";
   const [filters, setFilters] = useState({
     q: searchParams.get("q") || "",
@@ -60,7 +60,12 @@ export function Register({ policies, onView, onCreate, onReload }) {
     });
   }, [policies, filters.status, filters.pipeline, deferredQ, windowFilter]);
 
-  const kpiLabel = KPI_FILTER_LABELS[windowFilter];
+  const kpiLabel = KPI_FILTER_LABELS[windowFilter] || (filters.pipeline ? `Pipeline: ${filters.pipeline}` : "");
+
+  function clearFilters() {
+    setFilters({ q: "", status: "", pipeline: "" });
+    if (windowFilter || searchParams.get("pipeline")) setSearchParams({});
+  }
 
   async function handleExportExcel() {
     setExporting(true);
@@ -201,7 +206,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
 
       <FilterBar
         showClear={hasActiveFilters}
-        onClear={() => setFilters({ q: "", status: "", pipeline: "" })}
+        onClear={clearFilters}
       >
         <input
           className="adt-input val-filter-input"
@@ -239,7 +244,20 @@ export function Register({ policies, onView, onCreate, onReload }) {
       </FilterBar>
 
       {rows.length === 0 ? (
-        <EmptyState title="No results">
+        <EmptyState
+          title="No results"
+          action={
+            hasActiveFilters ? (
+              <Button tone="ghost" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : canEditRenewals(user?.role) ? (
+              <Button tone="accent" onClick={onCreate}>
+                Add policy
+              </Button>
+            ) : null
+          }
+        >
           {hasActiveFilters
             ? "No policies match your filters."
             : "No policies yet. Import the Excel register or add a policy."}

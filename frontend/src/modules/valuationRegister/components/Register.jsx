@@ -32,7 +32,7 @@ export function Register({ onView, onCreate }) {
   const { user } = useAuth();
   const { state, reloadFromServer } = useValuations();
   const importRef = useRef(null);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const kpiFilter = searchParams.get("kpi") || "";
   const [filters, setFilters] = useState({
     q: searchParams.get("q") || "",
@@ -47,7 +47,7 @@ export function Register({ onView, onCreate }) {
   const [clearResult, setClearResult] = useState(null);
 
   const deferredQ = useDeferredValue(filters.q);
-  const hasActiveFilters = Boolean(filters.q || filters.status || filters.insurer || filters.valuerId);
+  const hasActiveFilters = Boolean(filters.q || filters.status || filters.insurer || filters.valuerId || kpiFilter);
 
   const exportParams = useMemo(
     () => ({
@@ -80,6 +80,7 @@ export function Register({ onView, onCreate }) {
 
   function clearFilters() {
     setFilters({ q: "", status: "", insurer: "", valuerId: "" });
+    if (kpiFilter) setSearchParams({});
   }
 
   async function handleExportExcel() {
@@ -262,7 +263,16 @@ export function Register({ onView, onCreate }) {
       </FilterBar>
 
       {rows.length === 0 ? (
-        <EmptyState title="No results">
+        <EmptyState
+          title="No results"
+          action={
+            hasActiveFilters || kpiLabel ? (
+              <Button tone="ghost" onClick={clearFilters}>Clear filters</Button>
+            ) : canEditValuations(user?.role) ? (
+              <Button tone="accent" onClick={onCreate}>Add Valuation</Button>
+            ) : null
+          }
+        >
           {hasActiveFilters || kpiLabel
             ? "No valuations match your filters. Try clearing filters or adjusting your search."
             : "No valuations in the register yet. Add one manually or import from Excel."}

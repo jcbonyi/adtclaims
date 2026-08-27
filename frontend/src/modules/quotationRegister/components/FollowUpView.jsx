@@ -30,14 +30,13 @@ export function FollowUpView({ onOpenClient }) {
 
   return (
     <>
-      <PageHeader title="Follow-Up Queue" subtitle="Active follow-up work sorted by longest open first." />
-      <p style={{ margin: 0, color: THEME.textMuted, maxWidth: 720, fontSize: 14 }}>
-        Quotations in <strong>Client to advise</strong>, <strong>On hold</strong>, or <strong>Pending</strong>,
-        sorted by longest open first.
-      </p>
+      <PageHeader
+        title="Follow-Up Queue"
+        subtitle="Quotations in Client to advise, On hold, or Pending — longest open first."
+      />
 
       {rows.length === 0 && (
-        <EmptyState>No quotations currently match this follow-up queue.</EmptyState>
+        <EmptyState title="All caught up">No quotations currently match this follow-up queue.</EmptyState>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

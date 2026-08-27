@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ATTENTION_SLA_DAYS, THEME, isPlacedStatus, STATUS_BADGE_STYLES } from '../constants'
+import { quotationPath } from '../basePath'
 import { useQuotations } from '../context/useQuotations'
 import { daysOpen, formatDisplayDate, getToday, toISODate } from '../utils/dates'
 import {
@@ -9,8 +11,13 @@ import {
 import { Card, CardTitle, Button, PageHeader, KpiCard, KpiRow, LinkButton, EmptyState } from './ui'
 
 export function Dashboard({ onOpenClient }) {
+  const navigate = useNavigate()
   const { state } = useQuotations()
   const { quotations } = state
+
+  function openKpiView(kpi) {
+    navigate(quotationPath(`register?kpi=${encodeURIComponent(kpi)}`))
+  }
 
   const metrics = useMemo(() => {
     const total = quotations.length
@@ -82,13 +89,13 @@ export function Dashboard({ onOpenClient }) {
 
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="Pipeline health, conversion, and cases requiring action." />
+      <PageHeader title="Dashboard" subtitle="Pipeline health, conversion, and cases requiring action. Click a KPI to open the filtered register." />
 
       <KpiRow>
-        <KpiCard label="Total quotes" value={metrics.total} accent={THEME.brandBlue} />
-        <KpiCard label="Awaiting decision" value={metrics.awaiting} sub="Client to advise + Pending" accent="#F59E0B" />
-        <KpiCard label="Cover placed" value={metrics.placed} accent={THEME.brandGreen} />
-        <KpiCard label="On hold / Declined" value={metrics.holdDeclined} accent="#94A3B8" />
+        <KpiCard label="Total quotes" value={metrics.total} accent={THEME.brandBlue} onClick={() => openKpiView('total')} />
+        <KpiCard label="Awaiting decision" value={metrics.awaiting} sub="Client to advise + Pending" accent="#F59E0B" onClick={() => openKpiView('awaiting')} />
+        <KpiCard label="Cover placed" value={metrics.placed} accent={THEME.brandGreen} onClick={() => openKpiView('placed')} />
+        <KpiCard label="On hold / Declined" value={metrics.holdDeclined} accent="#94A3B8" onClick={() => openKpiView('hold')} />
       </KpiRow>
 
       <Card className="adt-stat-highlight">
@@ -141,7 +148,7 @@ export function Dashboard({ onOpenClient }) {
             “Client to advise” for more than {ATTENTION_SLA_DAYS} days (as at {formatDisplayDate(toISODate(getToday()))}).
           </p>
           {needsAttention.length === 0 ? (
-            <EmptyState>No items in this queue.</EmptyState>
+            <EmptyState title="All clear">No items in this queue.</EmptyState>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {needsAttention.map((q) => (
@@ -165,7 +172,7 @@ export function Dashboard({ onOpenClient }) {
       <Card style={{ padding: 20 }} hover>
         <CardTitle>Upcoming renewals (45 days)</CardTitle>
         {!renewalAlerts.length ? (
-          <EmptyState>No upcoming renewals in the next 45 days.</EmptyState>
+          <EmptyState title="Nothing due">No upcoming renewals in the next 45 days.</EmptyState>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {renewalAlerts.map(({ q, inDays }) => (

@@ -27,12 +27,31 @@ export function CardTitle({ children }) {
   return <h3 className="adt-card-header">{children}</h3>
 }
 
-export function KpiCard({ label, value, sub, accent = THEME.brandBlue }) {
-  return (
-    <div className="adt-kpi" style={{ '--kpi-accent': accent }}>
+export function KpiCard({ label, value, sub, accent = THEME.brandBlue, onClick }) {
+  const inner = (
+    <>
       <div className="adt-kpi-label">{label}</div>
       <div className="adt-kpi-value">{value}</div>
       {sub != null ? <div className="adt-kpi-sub">{sub}</div> : null}
+      {onClick ? <div className="adt-kpi-hint">Click to view →</div> : null}
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className="adt-kpi adt-kpi--clickable"
+        style={{ '--kpi-accent': accent }}
+        onClick={onClick}
+        aria-label={`${label}: ${value}. Click to view details.`}
+      >
+        {inner}
+      </button>
+    )
+  }
+  return (
+    <div className="adt-kpi" style={{ '--kpi-accent': accent }}>
+      {inner}
     </div>
   )
 }
@@ -72,6 +91,21 @@ export function LinkButton({ children, onClick, className = '', style }) {
   )
 }
 
-export function EmptyState({ children }) {
-  return <div className="adt-table-empty">{children}</div>
+export function EmptyState({ title, children, action }) {
+  return (
+    <div className="adt-table-empty">
+      {title ? <strong className="adt-empty-title">{title}</strong> : null}
+      <p className="adt-empty-body">{children}</p>
+      {action ? <div className="adt-empty-action">{action}</div> : null}
+    </div>
+  )
+}
+
+export function LoadingState({ label = "Loading…" }) {
+  return (
+    <div className="adt-loading" role="status">
+      <div className="adt-loading-spinner" aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  )
 }
