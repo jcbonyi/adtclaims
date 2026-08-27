@@ -31,6 +31,9 @@ const DEFAULT_DAILY_REGISTER_RECIPIENTS = [
   "communications@adtinsurance.co.ke",
 ];
 
+/** Ops digest is paused unless CLAIMS_OPS_DIGEST_ENABLED=true. */
+const OPS_DIGEST_ENABLED = process.env.CLAIMS_OPS_DIGEST_ENABLED === "true";
+
 const CLOSED = new Set(CLOSED_STATUS_LIST);
 const HIGH_SIGNAL = new Set([
   "Awaiting Assessment",
@@ -624,7 +627,7 @@ async function runClaimsAutomationJob(pool, deps = {}) {
 
   const digestTo = claimsOpsRecipients(settings.ops_email_list);
   let digestSent = false;
-  if (settings.email_enabled && digestTo.length) {
+  if (OPS_DIGEST_ENABLED && settings.email_enabled && digestTo.length) {
     const generatedAt = new Date().toISOString();
     const result = await sendClaimsOpsDigest({
       to: digestTo,
@@ -672,8 +675,11 @@ async function runClaimsAutomationJob(pool, deps = {}) {
   }
 
   await pool.query(
-    `UPDATE claim_settings SET last_run_at = NOW(), last_digest_at = NOW(), updated_at = NOW()
-     WHERE id = (SELECT id FROM claim_settings ORDER BY id ASC LIMIT 1)`
+    digestSent
+      ? `UPDATE claim_settings SET last_run_at = NOW(), last_digest_at = NOW(), updated_at = NOW()
+         WHERE id = (SELECT id FROM claim_settings ORDER BY id ASC LIMIT 1)`
+      : `UPDATE claim_settings SET last_run_at = NOW(), updated_at = NOW()
+         WHERE id = (SELECT id FROM claim_settings ORDER BY id ASC LIMIT 1)`
   );
   await deps.onPersist?.();
 
@@ -714,6 +720,7 @@ function registerClaimsNotificationRoutes(app, deps) {
         lastDigestAt: settings.last_digest_at,
         lastRegisterEmailAt: settings.last_register_email_at,
         dailyRegisterRecipients: dailyRegisterRecipients(),
+        opsDigestEnabled: OPS_DIGEST_ENABLED,
         smtpHost: settings.smtp_host || "",
         smtpPort: settings.smtp_port ?? 587,
         smtpSecure: !!settings.smtp_secure,

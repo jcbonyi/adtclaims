@@ -13,7 +13,7 @@ Full-stack web application for managing insurance claims across insurers and cla
 - **Policy Renewals** module (`/renewals`) — Excel ingest (upsert + preview), T-60/30/15/7/1 SMS + email + WhatsApp, pipeline/RM ownership, financier auto-create, inbound STOP/RENEWED, attachments, client 360, monthly production report
 - **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, **Excel import/export** (template download, filtered export), CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
 - Claims register with filters, pagination, sorting, global search, row aging color cues, inline status update, and quick remark add
-- Claim **notifications & automations** (`/claims/notifications`) — email on new claims and high-signal status changes (RA issued, released, closed, pending docs, assessment), daily 07:15 ops digest of the four follow-up queues, aging chases at 8 / 15 / 30+ days
+- Claim **notifications & automations** (`/claims/notifications`) — email on new claims and high-signal status changes (RA issued, released, closed, pending docs, assessment), aging chases at 8 / 15 / 30+ days (daily ops digest paused)
 - Claim detail form for create/edit with append-only remarks and status transition history
 - Overall dashboard with KPI cards and charts (status, insurer, aging)
 - Insurer dashboard section with insurer-specific KPIs, status breakdown, and worst-aging open claims
@@ -235,7 +235,7 @@ Configure in `backend/.env`:
 Configure in Claims → Notifications (**SMTP settings**) or `backend/.env` (`SMTP_*`). Optional `CLAIMS_OPS_EMAIL_LIST` for ops alerts:
 
 - **Immediate:** new claim logged; high-signal status changes (RA Issued, Released, Closed/Paid/Repudiated, Pending Documents, Awaiting Assessment, Litigation, Payment Processing). Optional: email on every status change.
-- **Daily 07:15:** ops digest of Pending Assessment, Pending Documents, Not Released, and Stuck >7 days, plus one-off chases at 8 / 15 / 30+ days open and configurable chase days for assessment, documents, and unreleased vehicles.
+- **Daily 07:15:** aging chases at 8 / 15 / 30+ days open (ops digest email is paused; set `CLAIMS_OPS_DIGEST_ENABLED=true` to resume).
 - **Daily 17:30 EAT:** branded Excel of **open** claims only, with **Motor** and **Non-Motor** tabs (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/_/backend/api/claims-notifications/cron/daily-register` at 14:30 UTC (17:30 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
 - Admins, Claims Officers, and Operations can click **Run now**. The send log is on the same page.
 

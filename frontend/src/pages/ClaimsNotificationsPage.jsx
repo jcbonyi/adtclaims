@@ -84,7 +84,7 @@ export default function ClaimsNotificationsPage() {
       const res = await client.post("/claims-notifications/run");
       const q = res.data.queues || {};
       setMessage(
-        `Job finished. Digest ${res.data.digestSent ? "sent" : "not sent"}. Queues — assessment ${q.pendingAssessment}, documents ${q.pendingDocuments}, not released ${q.notReleased}, stuck >7d ${q.stuckOver7}, over 30d ${q.over30}.`
+        `Job finished. Digest ${res.data.digestSent ? "sent" : "paused"}. Queues — assessment ${q.pendingAssessment}, documents ${q.pendingDocuments}, not released ${q.notReleased}, stuck >7d ${q.stuckOver7}, over 30d ${q.over30}.`
       );
       await load(statusFilter);
     } catch (err) {
@@ -143,7 +143,7 @@ export default function ClaimsNotificationsPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Claims notifications</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Email (and optional SMS) when claims are logged or move to high-signal statuses, a daily 07:15 EAT ops digest, and a daily 17:30 EAT claims-register Excel to Aisha, Jacob, and Communications.
+          Email (and optional SMS) when claims are logged or move to high-signal statuses, and a daily 17:30 EAT claims-register Excel to Aisha, Jacob, and Communications. The daily ops digest is paused.
         </p>
       </div>
 
@@ -305,7 +305,7 @@ export default function ClaimsNotificationsPage() {
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <h2 className="mb-2 text-base font-semibold text-slate-900">Run automations</h2>
             <p className="mb-3 text-sm text-slate-600">
-              Daily 07:15 EAT sends the ops digest and aging chases. Daily 17:30 EAT emails the branded claims-register Excel
+              Daily 07:15 EAT still runs aging chases; the ops digest email is paused. Daily 17:30 EAT emails the branded claims-register Excel
               {form.dailyRegisterRecipients?.length
                 ? ` to ${form.dailyRegisterRecipients.join(", ")}`
                 : ""}
