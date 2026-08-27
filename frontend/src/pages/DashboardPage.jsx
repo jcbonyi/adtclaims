@@ -101,6 +101,7 @@ export default function DashboardPage() {
   const [kpiPage, setKpiPage] = useState(1);
   const [kpiLoading, setKpiLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [notifyInfo, setNotifyInfo] = useState(null);
 
   const kpiTotalPages = useMemo(() => Math.max(1, Math.ceil(kpiTotal / 20)), [kpiTotal]);

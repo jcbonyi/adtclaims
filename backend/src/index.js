@@ -2366,7 +2366,8 @@ app.get("/api/claims-export.xlsx", authRequired, async (req, res) => {
 });
 
 app.get("/api/dashboard/overall", authRequired, async (_, res) => {
-  const result = await pool.query(`
+  try {
+    const result = await pool.query(`
     SELECT insurer, claim_status, reported_to_broker_date, closure_date
     FROM claims
   `);
@@ -2419,11 +2420,16 @@ app.get("/api/dashboard/overall", authRequired, async (_, res) => {
       value: agingMap.get(bucket) || 0,
     })),
   });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Failed to load dashboard summary" });
+  }
 });
 
 app.get("/api/dashboard/insurer", authRequired, async (req, res) => {
-  const insurer = req.query.insurer;
-  if (!insurer) return res.status(400).json({ message: "insurer is required" });
+  try {
+    const insurer = req.query.insurer;
+    if (!insurer) return res.status(400).json({ message: "insurer is required" });
 
   const claimsRes = await pool.query(
     `SELECT id, insured_name, registration_number, claim_status, reported_to_broker_date, closure_date
@@ -2466,10 +2472,15 @@ app.get("/api/dashboard/insurer", authRequired, async (req, res) => {
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value),
   });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Failed to load insurer dashboard" });
+  }
 });
 
 app.get("/api/dashboard/operations", authRequired, async (_, res) => {
-  const claimsRes = await pool.query(`
+  try {
+    const claimsRes = await pool.query(`
     SELECT
       id,
       insurer,
@@ -2512,6 +2523,10 @@ app.get("/api/dashboard/operations", authRequired, async (_, res) => {
     pendingDocuments,
     notReleased,
   });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Failed to load operations dashboard" });
+  }
 });
 
 app.post(
