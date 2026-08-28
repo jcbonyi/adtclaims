@@ -12,6 +12,7 @@ const { newDb } = require("pg-mem");
 const { z } = require("zod");
 const multer = require("multer");
 const xlsx = require("xlsx");
+const { enablePublicRowLevelSecurity } = require("./enablePublicRls");
 const {
   getPendingDocumentsMeta,
   normalizeReceivedKeys,
@@ -138,14 +139,23 @@ function preferServerlessDatabaseUrl(conn) {
     if (/\.neon\.tech$/i.test(host) && !/-pooler/i.test(host) && /^ep-/i.test(host)) {
       parsed.hostname = host.replace(/^(ep-[^.]+)/i, "$1-pooler");
     }
-    if (hostedPostgresNeedsSsl(value) && !parsed.searchParams.has("sslmode")) {
-      parsed.searchParams.set("sslmode", "require");
-    }
     parsed.searchParams.delete("channel_binding");
+    // sslmode=require still verifies certs in node-pg and fails on Vercel
+    // ("self-signed certificate in certificate chain"). no-verify = TLS on, no CA check.
+    if (hostedPostgresNeedsSsl(value)) {
+      parsed.searchParams.set("sslmode", "no-verify");
+    }
     return parsed.toString();
   } catch {
     if (/\.neon\.tech/i.test(value) && !/-pooler\./i.test(value)) {
       value = value.replace(/(@ep-[a-z0-9-]+)\./i, "$1-pooler.");
+    }
+    if (hostedPostgresNeedsSsl(value)) {
+      if (/[?&]sslmode=/i.test(value)) {
+        value = value.replace(/([?&]sslmode=)[^&]*/i, "$1no-verify");
+      } else {
+        value += (value.includes("?") ? "&" : "?") + "sslmode=no-verify";
+      }
     }
     return value;
   }
@@ -587,6 +597,8 @@ async function ensureDb() {
   } catch {
     /* pg-mem may not support constraint rename; table was created with updated list */
   }
+
+  await enablePublicRowLevelSecurity(pool);
 }
 
 async function authRequired(req, res, next) {
