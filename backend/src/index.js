@@ -98,14 +98,56 @@ function databaseUrlLooksUnreachableFromVercel(conn) {
   );
 }
 
-/** Neon direct hosts often hang on Vercel IPv6; the pooler hostname is IPv4 + PgBouncer. */
+function databaseUrlLooksLikeSharedHosting(conn) {
+  return /host-ww\.net|cpanel|whuk|webhost|hostinger|namecheap|hostgator|bluehost|godaddy|\.adtinsurance\.co\.ke/i.test(
+    String(conn || "")
+  );
+}
+
+function looksLikeManagedServerlessPostgres(conn) {
+  return /neon\.tech|supabase\.com|railway\.app|render\.com|amazonaws\.com|neon\.build/i.test(
+    String(conn || "")
+  );
+}
+
+function ipv4Lookup(hostname, options, callback) {
+  dns.lookup(hostname, { family: 4 }, (err, address, family) => {
+    if (!err) {
+      callback(null, address, family);
+      return;
+    }
+    dns.lookup(hostname, options, callback);
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Neon direct hosts hang on Vercel IPv6; pooled hostname is IPv4 + PgBouncer. */
 function preferServerlessDatabaseUrl(conn) {
-  const url = String(conn || "").trim();
-  if (!url) return url;
-  if (/\.neon\.tech/i.test(url) && !/-pooler\./i.test(url)) {
-    return url.replace(/(@ep-[a-z0-9-]+)\./i, "$1-pooler.");
+  let value = String(conn || "").trim();
+  if (!value) return value;
+  value = value.replace(/([?&])channel_binding=[^&]*/gi, "$1");
+  value = value.replace(/\?&/, "?").replace(/[?&]$/, "");
+
+  try {
+    const parsed = new URL(value.replace(/^postgres:/i, "postgresql:"));
+    const host = parsed.hostname || "";
+    if (/\.neon\.tech$/i.test(host) && !/-pooler/i.test(host) && /^ep-/i.test(host)) {
+      parsed.hostname = host.replace(/^(ep-[^.]+)/i, "$1-pooler");
+    }
+    if (hostedPostgresNeedsSsl(value) && !parsed.searchParams.has("sslmode")) {
+      parsed.searchParams.set("sslmode", "require");
+    }
+    parsed.searchParams.delete("channel_binding");
+    return parsed.toString();
+  } catch {
+    if (/\.neon\.tech/i.test(value) && !/-pooler\./i.test(value)) {
+      value = value.replace(/(@ep-[a-z0-9-]+)\./i, "$1-pooler.");
+    }
+    return value;
   }
-  return url;
 }
 
 function vercelDatabaseHint(error) {
@@ -117,8 +159,11 @@ function vercelDatabaseHint(error) {
   if (databaseUrlLooksUnreachableFromVercel(conn)) {
     return `${msg}. DATABASE_URL points to localhost or a private network. Vercel cannot reach it — use Neon/Supabase/Railway, not your laptop or cPanel-only Postgres.`;
   }
+  if (databaseUrlLooksLikeSharedHosting(conn)) {
+    return `${msg}. DATABASE_URL is a cPanel/shared-hosting Postgres host. Vercel cannot open port 5432 to that server. Create a Neon or Supabase database, copy the pooled connection string onto the Vercel backend service, then Redeploy.`;
+  }
   if (/timeout|terminated/i.test(msg)) {
-    return `${msg}. Vercel timed out reaching Postgres. Use the provider’s pooled URL (Neon: host contains -pooler; Supabase: pooler.supabase.com port 6543), allow public connections, then redeploy.`;
+    return `${msg}. Vercel timed out reaching Postgres. On Neon copy the pooled URL (hostname contains -pooler). On Supabase use pooler.supabase.com port 6543. Allow public connections, then Redeploy.`;
   }
   return msg;
 }
@@ -142,17 +187,19 @@ function createDbPool(options = {}) {
   if (!forceInMemory && process.env.DATABASE_URL) {
     const conn = preferServerlessDatabaseUrl(process.env.DATABASE_URL);
     if (conn !== process.env.DATABASE_URL) {
-      console.warn("Using Neon pooled DATABASE_URL host (…-pooler…) for Vercel/serverless.");
+      console.warn("Using rewritten DATABASE_URL (Neon pooler / sslmode) for serverless.");
     }
     return {
       pool: new Pool({
         connectionString: conn,
         max: IS_VERCEL ? 1 : 10,
         min: 0,
-        connectionTimeoutMillis: IS_VERCEL ? 8000 : 5000,
+        connectionTimeoutMillis: IS_VERCEL ? 20000 : 5000,
         idleTimeoutMillis: IS_VERCEL ? 4000 : 30000,
         allowExitOnIdle: IS_VERCEL,
         keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
+        lookup: ipv4Lookup,
         ...(hostedPostgresNeedsSsl(conn)
           ? {
               ssl: { rejectUnauthorized: false },
@@ -236,6 +283,8 @@ app.use(express.urlencoded({ extended: true }));
 
 let dbReady = false;
 let startupError = null;
+let moduleRoutesRegistered = false;
+let initInFlight = null;
 let markReady;
 const readyPromise = new Promise((resolve) => {
   markReady = resolve;
@@ -252,9 +301,12 @@ app.use(async (req, res, next) => {
   } catch {
     /* boot always resolves */
   }
-  if (startupError && !dbReady) {
+  if (dbReady) return next();
+  try {
+    await ensureDatabaseReady();
+  } catch (error) {
     return res.status(503).json({
-      message: `Database is not ready: ${vercelDatabaseHint(startupError)}`,
+      message: `Database is not ready: ${vercelDatabaseHint(error)}`,
     });
   }
   return next();
@@ -2655,15 +2707,53 @@ async function seedOptionalData() {
   }
 }
 
-async function startServer() {
+async function recreatePostgresPool() {
+  if (typeof pool.end === "function") {
+    await pool.end().catch(() => {});
+  }
+  const created = createDbPool();
+  pool = created.pool;
+  dbMode = created.dbMode;
+}
+
+async function pingPostgres() {
+  const managed = looksLikeManagedServerlessPostgres(process.env.DATABASE_URL);
+  const attempts = IS_VERCEL && managed ? 4 : IS_VERCEL ? 2 : 1;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await pool.query("SELECT 1 AS ok");
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn(`Postgres ping ${attempt}/${attempts} failed:`, error.message);
+      if (attempt < attempts) {
+        await recreatePostgresPool();
+        await sleep(1200 * attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function initDatabase() {
   if (IS_VERCEL && process.env.DATABASE_URL && databaseUrlLooksUnreachableFromVercel(process.env.DATABASE_URL)) {
     throw new Error(
       "DATABASE_URL points to localhost or a private network. Vercel cannot reach it — use Neon, Supabase, or Railway Postgres (pooled public URL)."
     );
   }
+  if (IS_VERCEL && databaseUrlLooksLikeSharedHosting(process.env.DATABASE_URL || "")) {
+    throw new Error(
+      "DATABASE_URL points at cPanel/shared-hosting Postgres. Vercel cannot open port 5432 to that server. Create a Neon or Supabase database, paste the pooled URL on the Vercel backend service, Redeploy, then sign in."
+    );
+  }
+
+  if (dbMode === "postgres" && process.env.DATABASE_URL) {
+    await recreatePostgresPool();
+  }
 
   try {
-    await pool.query("SELECT 1 AS ok");
+    await pingPostgres();
     await ensureDb();
     await maybeLoadInMemorySnapshot();
     if (!IS_VERCEL) {
@@ -2678,10 +2768,10 @@ async function startServer() {
     }
 
     console.warn("Postgres unavailable. Falling back to in-memory database for local development.");
+    const fallback = createDbPool({ forceInMemory: true });
     if (typeof pool.end === "function") {
       await pool.end().catch(() => {});
     }
-    const fallback = createDbPool({ forceInMemory: true });
     pool = fallback.pool;
     dbMode = fallback.dbMode;
     await ensureDb();
@@ -2689,6 +2779,11 @@ async function startServer() {
     await seedOptionalData();
     await loadSmtpFromDb(pool);
   }
+}
+
+function registerModuleRoutesOnce() {
+  if (moduleRoutesRegistered) return;
+  moduleRoutesRegistered = true;
 
   registerQuotationRoutes(app, {
     pool,
@@ -2771,6 +2866,36 @@ async function startServer() {
       onPersist: maybePersistInMemorySnapshot,
     });
   }
+}
+
+async function ensureDatabaseReady() {
+  if (dbReady) return;
+  if (initInFlight) {
+    await initInFlight;
+    if (!dbReady) {
+      throw startupError || new Error("Database is not ready");
+    }
+    return;
+  }
+  initInFlight = (async () => {
+    await initDatabase();
+    registerModuleRoutesOnce();
+    dbReady = true;
+    startupError = null;
+  })();
+  try {
+    await initInFlight;
+  } catch (error) {
+    startupError = error;
+    throw error;
+  } finally {
+    initInFlight = null;
+  }
+}
+
+async function startServer() {
+  await initDatabase();
+  registerModuleRoutesOnce();
 
   if (IS_VERCEL) {
     if (dbMode === "in-memory") {

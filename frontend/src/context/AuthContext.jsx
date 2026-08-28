@@ -16,7 +16,10 @@ function apiErrorMessage(error, fallback) {
   if (!error.response && error.message) {
     return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL in Vercel is https://your-app.vercel.app/_/backend/api`;
   }
-  if (status === 503) return `${fallback}: API database is not ready. Check DATABASE_URL on the Vercel backend service.`;
+  if (status === 503) {
+    const serverMsg = typeof msg === "string" && msg.trim() ? msg.trim() : "";
+    return serverMsg || `${fallback}: API database is not ready. Check DATABASE_URL on the Vercel backend service.`;
+  }
   if (status) return `${fallback} (HTTP ${status}).`;
   return fallback;
 }
