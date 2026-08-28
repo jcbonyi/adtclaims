@@ -7,6 +7,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { Pool } = require("pg");
+const { neonConfig, Pool: NeonHttpPool } = require("@neondatabase/serverless");
 const { newDb } = require("pg-mem");
 const { z } = require("zod");
 const multer = require("multer");
@@ -150,22 +151,39 @@ function preferServerlessDatabaseUrl(conn) {
   }
 }
 
+function databaseHostLabel(raw = process.env.DATABASE_URL) {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(preferServerlessDatabaseUrl(value).replace(/^postgres:/i, "postgresql:"));
+    return `${parsed.hostname}:${parsed.port || "5432"}`;
+  } catch {
+    return "unparseable";
+  }
+}
+
+function isNeonConnection(conn) {
+  return /\.neon\.tech/i.test(String(conn || ""));
+}
+
 function vercelDatabaseHint(error) {
   const msg = String(error?.message || "database connection failed");
   const conn = process.env.DATABASE_URL || "";
+  const host = databaseHostLabel(conn);
+  const hostNote = host ? ` Connecting to ${host}.` : "";
   if (!conn) {
     return `${msg}. Set DATABASE_URL on the Vercel backend service to a hosted Postgres URL (Neon pooled or Supabase pooler).`;
   }
   if (databaseUrlLooksUnreachableFromVercel(conn)) {
-    return `${msg}. DATABASE_URL points to localhost or a private network. Vercel cannot reach it — use Neon/Supabase/Railway, not your laptop or cPanel-only Postgres.`;
+    return `${msg}.${hostNote} DATABASE_URL points to localhost or a private network. Vercel cannot reach it — use Neon/Supabase/Railway, not your laptop or cPanel-only Postgres.`;
   }
-  if (databaseUrlLooksLikeSharedHosting(conn)) {
-    return `${msg}. DATABASE_URL is a cPanel/shared-hosting Postgres host. Vercel cannot open port 5432 to that server. Create a Neon or Supabase database, copy the pooled connection string onto the Vercel backend service, then Redeploy.`;
+  if (databaseUrlLooksLikeSharedHosting(conn) || (host && !looksLikeManagedServerlessPostgres(host))) {
+    return `${msg}.${hostNote} That host is not public serverless Postgres. Vercel cannot open TCP 5432 to cPanel or office servers. Create a Neon database, copy the pooled URL (hostname contains -pooler), set it as DATABASE_URL on the backend service, Redeploy.`;
   }
   if (/timeout|terminated/i.test(msg)) {
-    return `${msg}. Vercel timed out reaching Postgres. On Neon copy the pooled URL (hostname contains -pooler). On Supabase use pooler.supabase.com port 6543. Allow public connections, then Redeploy.`;
+    return `${msg}.${hostNote} Use Neon pooled URL (hostname contains -pooler) or Supabase pooler.supabase.com:6543, allow public connections, Redeploy.`;
   }
-  return msg;
+  return host ? `${msg}.${hostNote}` : msg;
 }
 
 function isPostgresUnreachable(error) {
@@ -189,6 +207,19 @@ function createDbPool(options = {}) {
     if (conn !== process.env.DATABASE_URL) {
       console.warn("Using rewritten DATABASE_URL (Neon pooler / sslmode) for serverless.");
     }
+    if (IS_VERCEL && isNeonConnection(conn)) {
+      neonConfig.poolQueryViaFetch = true;
+      console.warn("Using Neon HTTP pool (port 443) instead of TCP 5432.");
+      return {
+        pool: new NeonHttpPool({
+          connectionString: conn,
+          max: 1,
+          idleTimeoutMillis: 4000,
+        }),
+        dbMode: "postgres",
+        dbDriver: "neon-http",
+      };
+    }
     return {
       pool: new Pool({
         connectionString: conn,
@@ -207,6 +238,7 @@ function createDbPool(options = {}) {
           : {}),
       }),
       dbMode: "postgres",
+      dbDriver: "pg",
     };
   }
 
@@ -225,10 +257,11 @@ function createDbPool(options = {}) {
   return {
     pool: new adapter.Pool(),
     dbMode: "in-memory",
+    dbDriver: "memory",
   };
 }
 
-let { pool, dbMode } = createDbPool();
+let { pool, dbMode, dbDriver } = createDbPool();
 let snapshotWriteInProgress = false;
 let snapshotWriteQueued = false;
 
@@ -313,10 +346,14 @@ app.use(async (req, res, next) => {
 });
 
 function sendHealth(_req, res) {
+  const dbHost = databaseHostLabel();
   res.json({
     ok: dbReady && !startupError,
     ready: dbReady,
     dbMode,
+    dbDriver,
+    dbHost,
+    pooled: Boolean(dbHost && /-pooler/i.test(dbHost)),
     vercel: IS_VERCEL,
     error: startupError ? vercelDatabaseHint(startupError) : null,
   });
@@ -2714,6 +2751,7 @@ async function recreatePostgresPool() {
   const created = createDbPool();
   pool = created.pool;
   dbMode = created.dbMode;
+  dbDriver = created.dbDriver;
 }
 
 async function pingPostgres() {
@@ -2774,6 +2812,7 @@ async function initDatabase() {
     }
     pool = fallback.pool;
     dbMode = fallback.dbMode;
+    dbDriver = fallback.dbDriver;
     await ensureDb();
     await maybeLoadInMemorySnapshot();
     await seedOptionalData();
