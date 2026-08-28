@@ -171,6 +171,7 @@ export default function ClaimsNotificationsPage() {
           <h2 className="mb-1 text-base font-semibold text-slate-900">SMTP settings</h2>
           <p className="mb-3 text-sm text-slate-600">
             Used to send the daily 17:30 EAT claims-register Excel and all other claims emails. Saved here (not only in server env).
+            For <code>mail.adtinsurance.co.ke</code>, use port <strong>465</strong> with SSL ticked — port 587 often hits a 421 SMTP timeout on this host.
           </p>
           <div className="mb-3 grid gap-3 sm:grid-cols-2">
             <label className="block text-sm sm:col-span-2">

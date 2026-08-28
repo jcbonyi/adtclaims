@@ -16,6 +16,7 @@ const {
   isSmsConfigured,
   applySmtpSettings,
 } = require("./notificationService");
+const { isCronAuthorized } = require("./cronAuth");
 const {
   COMPANY,
   nairobiDateString,
@@ -243,19 +244,6 @@ function alreadySentRegisterToday(settings) {
   return nairobiDateString(settings.last_register_email_at) === nairobiDateString();
 }
 
-function isCronAuthorized(req) {
-  const secret = String(process.env.CRON_SECRET || process.env.ADMIN_RESET_KEY || "").trim();
-  const auth = String(req.headers.authorization || "");
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  const header = String(req.headers["x-cron-secret"] || "").trim();
-  const query = String(req.query.secret || "").trim();
-  if (secret && (bearer === secret || header === secret || query === secret)) return true;
-  if (process.env.VERCEL && /vercel-cron/i.test(String(req.headers["user-agent"] || ""))) {
-    return true;
-  }
-  return false;
-}
-
 async function runDailyClaimsRegisterEmail(pool, deps = {}) {
   const { force = false } = deps;
   const settings = await getSettings(pool);
@@ -313,7 +301,7 @@ async function runDailyClaimsRegisterEmail(pool, deps = {}) {
         contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     ],
-  });
+  }).catch((err) => ({ sent: false, reason: err.message || "not sent" }));
 
   await insertLog(pool, deps.nextSerialId, deps.dbMode, {
     claim_id: null,

@@ -33,7 +33,7 @@ function applySmtpSettings(partial) {
       from,
     };
   }
-  transporter = null;
+  resetTransporter();
 }
 
 function resolvedSmtp() {
@@ -61,18 +61,83 @@ function isSmsConfigured() {
   return !!(process.env.AFRICASTALKING_USERNAME && process.env.AFRICASTALKING_API_KEY);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function heloName(cfg) {
+  const override = String(process.env.SMTP_NAME || "").trim();
+  if (override) return override;
+  const from = String(cfg.from || "");
+  const domain = from.includes("@") ? from.split("@")[1].trim() : "";
+  return domain || undefined;
+}
+
+function resetTransporter() {
+  if (!transporter) return;
+  try {
+    transporter.close();
+  } catch {
+    /* ignore */
+  }
+  transporter = null;
+}
+
 function getTransporter() {
   const cfg = resolvedSmtp();
   if (!cfg.host || !cfg.from) return null;
   if (!transporter) {
+    const port = Number(cfg.port || 587);
+    const secure = !!cfg.secure || port === 465;
     transporter = nodemailer.createTransport({
       host: cfg.host,
-      port: Number(cfg.port || 587),
-      secure: !!cfg.secure || Number(cfg.port) === 465,
+      port,
+      secure,
       auth: cfg.user && cfg.pass ? { user: cfg.user, pass: cfg.pass } : undefined,
+      pool: false,
+      connectionTimeout: 25000,
+      greetingTimeout: 25000,
+      socketTimeout: 90000,
+      requireTLS: !secure && port === 587,
+      tls: {
+        servername: cfg.host,
+        minVersion: "TLSv1.2",
+      },
+      name: heloName(cfg),
+      logger: process.env.SMTP_DEBUG === "true",
+      debug: process.env.SMTP_DEBUG === "true",
     });
   }
   return transporter;
+}
+
+function isTransientSmtpError(err) {
+  const code = Number(err?.responseCode || err?.status);
+  const text = `${err?.code || ""} ${err?.command || ""} ${err?.response || ""} ${err?.message || ""}`;
+  if (code === 421 || code === 450 || code === 451 || code === 452 || code === 454) return true;
+  return /421|450|451|452|454|ETIMEDOUT|ECONNECTION|ESOCKET|ECONNRESET|EPIPE|ETLS|EAI_AGAIN|ENOTFOUND|timeout|timed out|socket closed|connection/i.test(
+    text
+  );
+}
+
+function smtpErrorMessage(err) {
+  if (!err) return "smtp_send_failed";
+  const response = String(err.response || "").trim();
+  const message = String(err.message || "").trim();
+  if (response && message && !message.includes(response)) return `${message} (${response})`;
+  return message || response || "smtp_send_failed";
+}
+
+let sendQueue = Promise.resolve();
+
+function enqueueSend(task) {
+  const run = () => task();
+  const pending = sendQueue.then(run, run);
+  sendQueue = pending.then(
+    () => undefined,
+    () => undefined
+  );
+  return pending;
 }
 
 function managementRecipients() {
@@ -99,23 +164,51 @@ function renewalOpsRecipients(settingsOpsList) {
 }
 
 async function sendEmail({ to, subject, text, html, attachments }) {
-  const transport = getTransporter();
-  if (!transport || !to?.length) {
+  return enqueueSend(() => sendEmailNow({ to, subject, text, html, attachments }));
+}
+
+async function sendEmailNow({ to, subject, text, html, attachments }) {
+  if (!getTransporter() || !to?.length) {
     console.log(`[notification skipped] ${subject} → ${Array.isArray(to) ? to.join(", ") : to}`);
     return { sent: false, reason: "smtp_not_configured_or_no_recipient" };
   }
   const recipients = Array.isArray(to) ? to.filter(Boolean) : [to];
   if (!recipients.length) return { sent: false, reason: "no_recipient" };
 
-  await transport.sendMail({
-    from: resolvedSmtp().from,
-    to: recipients.join(", "),
-    subject,
-    text,
-    html: html || (text ? text.replace(/\n/g, "<br>") : undefined),
-    attachments: attachments?.length ? attachments : undefined,
-  });
-  return { sent: true };
+  const serverless = Boolean(process.env.VERCEL);
+  const maxAttempts = serverless ? 3 : 4;
+  const backoffs = serverless ? [1000, 2500] : [2000, 5000, 12000];
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const transport = getTransporter();
+      if (!transport) return { sent: false, reason: "smtp_not_configured_or_no_recipient" };
+      await transport.sendMail({
+        from: resolvedSmtp().from,
+        to: recipients.join(", "),
+        subject,
+        text,
+        html: html || (text ? text.replace(/\n/g, "<br>") : undefined),
+        attachments: attachments?.length ? attachments : undefined,
+      });
+      return { sent: true };
+    } catch (err) {
+      lastError = err;
+      console.error(
+        `[smtp] send failed (attempt ${attempt}/${maxAttempts}) ${subject}:`,
+        smtpErrorMessage(err)
+      );
+      resetTransporter();
+      if (attempt < maxAttempts && isTransientSmtpError(err)) {
+        await sleep(backoffs[attempt - 1] || 5000);
+        continue;
+      }
+      break;
+    }
+  }
+
+  return { sent: false, reason: smtpErrorMessage(lastError) };
 }
 
 async function sendSms({ to, message }) {

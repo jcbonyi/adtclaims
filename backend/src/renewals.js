@@ -8,6 +8,7 @@ const {
   buildRenewalsTemplateBuffer,
   buildExportFilterSummary,
 } = require("./renewalExport");
+const { isCronAuthorized } = require("./cronAuth");
 const {
   sendEmail,
   sendSms,
@@ -790,9 +791,13 @@ async function deliverAttempt(attempt, settings) {
   }
 
   const { subject, text, html } = attempt.message;
-  const result = await sendEmail({ to: attempt.recipientAddress, subject, text, html });
-  if (result.sent) return { status: "sent", error: null, providerRef: null, deliveryStatus: "sent" };
-  return { status: "failed", error: result.reason || "Email send failed", providerRef: null, deliveryStatus: "failed" };
+  try {
+    const result = await sendEmail({ to: attempt.recipientAddress, subject, text, html });
+    if (result.sent) return { status: "sent", error: null, providerRef: null, deliveryStatus: "sent" };
+    return { status: "failed", error: result.reason || "Email send failed", providerRef: null, deliveryStatus: "failed" };
+  } catch (err) {
+    return { status: "failed", error: err.message || "Email send failed", providerRef: null, deliveryStatus: "failed" };
+  }
 }
 
 async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, force = false } = {}) {
@@ -868,7 +873,9 @@ async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, fo
         delivery_status: result.deliveryStatus || result.status,
         sent_at: result.status === "sent" ? new Date().toISOString() : null,
       });
-      if ((attempt.channel === "sms" || attempt.channel === "whatsapp") && delayMs && result.status === "sent") {
+      if (attempt.channel === "email") {
+        await sleep(result.status === "sent" ? 700 : 2000);
+      } else if ((attempt.channel === "sms" || attempt.channel === "whatsapp") && delayMs && result.status === "sent") {
         await sleep(delayMs);
       }
     }
@@ -1515,6 +1522,19 @@ function registerRenewalRoutes(app, deps) {
     try {
       const force = req.body?.force === true;
       const summary = await runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, force });
+      return res.json(summary);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ message: "Reminder job failed" });
+    }
+  });
+
+  app.get("/api/renewals/cron/reminders", async (req, res) => {
+    if (!isCronAuthorized(req)) {
+      return res.status(401).json({ message: "Unauthorized cron request" });
+    }
+    try {
+      const summary = await runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, force: false });
       return res.json(summary);
     } catch (err) {
       console.error(err);

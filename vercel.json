@@ -16,6 +16,10 @@
     {
       "path": "/_/backend/api/claims-notifications/cron/daily-register",
       "schedule": "30 14 * * *"
+    },
+    {
+      "path": "/_/backend/api/renewals/cron/reminders",
+      "schedule": "0 5 * * *"
     }
   ]
 }
