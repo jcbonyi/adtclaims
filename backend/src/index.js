@@ -126,6 +126,18 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise).finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${ms}ms`));
+      }, ms);
+    }),
+  ]);
+}
+
 /** Neon direct hosts hang on Vercel IPv6; pooled hostname is IPv4 + PgBouncer. */
 function preferServerlessDatabaseUrl(conn) {
   let value = String(conn || "").trim();
@@ -144,6 +156,10 @@ function preferServerlessDatabaseUrl(conn) {
     // ("self-signed certificate in certificate chain"). no-verify = TLS on, no CA check.
     if (hostedPostgresNeedsSsl(value)) {
       parsed.searchParams.set("sslmode", "no-verify");
+    }
+    // Supabase transaction pooler (6543): hint for ORMs; harmless for node-pg.
+    if (/\.pooler\.supabase\.com$/i.test(parsed.hostname || "")) {
+      parsed.searchParams.set("pgbouncer", "true");
     }
     return parsed.toString();
   } catch {
@@ -235,7 +251,7 @@ function createDbPool(options = {}) {
         connectionString: conn,
         max: IS_VERCEL ? 1 : 10,
         min: 0,
-        connectionTimeoutMillis: IS_VERCEL ? 20000 : 5000,
+        connectionTimeoutMillis: IS_VERCEL ? 12000 : 5000,
         idleTimeoutMillis: IS_VERCEL ? 4000 : 30000,
         allowExitOnIdle: IS_VERCEL,
         keepAlive: true,
@@ -328,34 +344,34 @@ let dbReady = false;
 let startupError = null;
 let moduleRoutesRegistered = false;
 let initInFlight = null;
-let markReady;
-const readyPromise = new Promise((resolve) => {
-  markReady = resolve;
-});
 
 function isHealthPath(reqPath) {
   return reqPath === "/health" || reqPath === "/api/health" || reqPath.endsWith("/api/health");
 }
 
+function isPooledHost(dbHost) {
+  return Boolean(dbHost && /(-pooler|\.pooler\.)/i.test(dbHost));
+}
+
+/** Serverless-safe: init on first request (Vercel can freeze background boot()). */
 app.use(async (req, res, next) => {
   if (isHealthPath(req.path || "")) return next();
   try {
-    await readyPromise;
-  } catch {
-    /* boot always resolves */
-  }
-  if (dbReady) return next();
-  try {
     await ensureDatabaseReady();
+    return next();
   } catch (error) {
     return res.status(503).json({
       message: `Database is not ready: ${vercelDatabaseHint(error)}`,
     });
   }
-  return next();
 });
 
-function sendHealth(_req, res) {
+async function sendHealth(_req, res) {
+  try {
+    await ensureDatabaseReady();
+  } catch {
+    /* surfaced via startupError / dbReady below */
+  }
   const dbHost = databaseHostLabel();
   res.json({
     ok: dbReady && !startupError,
@@ -363,7 +379,7 @@ function sendHealth(_req, res) {
     dbMode,
     dbDriver,
     dbHost,
-    pooled: Boolean(dbHost && /-pooler/i.test(dbHost)),
+    pooled: isPooledHost(dbHost),
     vercel: IS_VERCEL,
     error: startupError ? vercelDatabaseHint(startupError) : null,
   });
@@ -1208,10 +1224,6 @@ function extractRowsFromWorksheet(worksheet) {
 
   return { rows, headerRowIndex: bestIndex };
 }
-
-app.get("/api/health", (_, res) => {
-  res.json({ ok: true, dbMode });
-});
 
 app.post("/api/auth/register", authRequired, requireRole(["Admin"]), async (req, res) => {
   try {
@@ -2758,7 +2770,8 @@ async function seedOptionalData() {
 
 async function recreatePostgresPool() {
   if (typeof pool.end === "function") {
-    await pool.end().catch(() => {});
+    // pool.end() can hang if a connect is stuck; never block init forever.
+    await Promise.race([pool.end().catch(() => {}), sleep(1500)]);
   }
   const created = createDbPool();
   pool = created.pool;
@@ -2768,18 +2781,19 @@ async function recreatePostgresPool() {
 
 async function pingPostgres() {
   const managed = looksLikeManagedServerlessPostgres(process.env.DATABASE_URL);
-  const attempts = IS_VERCEL && managed ? 4 : IS_VERCEL ? 2 : 1;
+  const attempts = IS_VERCEL && managed ? 3 : IS_VERCEL ? 2 : 1;
+  const pingMs = IS_VERCEL ? 12000 : 5000;
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await pool.query("SELECT 1 AS ok");
+      await withTimeout(pool.query("SELECT 1 AS ok"), pingMs, `Postgres ping ${attempt}/${attempts}`);
       return;
     } catch (error) {
       lastError = error;
       console.warn(`Postgres ping ${attempt}/${attempts} failed:`, error.message);
       if (attempt < attempts) {
         await recreatePostgresPool();
-        await sleep(1200 * attempt);
+        await sleep(800 * attempt);
       }
     }
   }
@@ -2928,8 +2942,9 @@ async function ensureDatabaseReady() {
     }
     return;
   }
+  const initBudgetMs = IS_VERCEL ? 28000 : 90000;
   initInFlight = (async () => {
-    await initDatabase();
+    await withTimeout(initDatabase(), initBudgetMs, "Database initialization");
     registerModuleRoutesOnce();
     dbReady = true;
     startupError = null;
@@ -2944,18 +2959,22 @@ async function ensureDatabaseReady() {
   }
 }
 
-async function startServer() {
-  await initDatabase();
-  registerModuleRoutesOnce();
-
+async function boot() {
   if (IS_VERCEL) {
-    if (dbMode === "in-memory") {
-      console.warn(
-        "Vercel is using an empty in-memory database. Set DATABASE_URL on the backend service to hosted Postgres."
-      );
-    }
-    console.log(`API ready on Vercel (dbMode=${dbMode})`);
+    // Do not await here: Vercel may freeze after the first response.
+    // Real init happens in ensureDatabaseReady() on each request (including /api/health).
+    console.log("API module loaded on Vercel; DB will init on first request.");
+    ensureDatabaseReady().catch((error) => {
+      console.error("Warm database init failed:", error.message);
+    });
     return;
+  }
+
+  try {
+    await ensureDatabaseReady();
+  } catch (error) {
+    console.error("Failed to initialize database:", error);
+    process.exit(1);
   }
 
   app.listen(PORT, () => {
@@ -2966,21 +2985,6 @@ async function startServer() {
     }
     console.log(`API listening on http://localhost:${PORT}`);
   });
-}
-
-async function boot() {
-  try {
-    await startServer();
-    dbReady = true;
-  } catch (error) {
-    startupError = error;
-    console.error("Failed to initialize database:", error);
-    if (!IS_VERCEL) {
-      process.exit(1);
-    }
-  } finally {
-    markReady();
-  }
 }
 
 boot();

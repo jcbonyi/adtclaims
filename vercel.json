@@ -8,7 +8,13 @@
     "backend": {
       "root": "backend",
       "framework": "express",
-      "entrypoint": "src/index.js"
+      "entrypoint": "src/index.js",
+      "functions": {
+        "src/index.js": {
+          "maxDuration": 60,
+          "memory": 1024
+        }
+      }
     }
   },
   "rewrites": [
