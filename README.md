@@ -219,7 +219,7 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 
 Configure in `backend/.env`:
 
-- **Email:** `SMTP_*` plus `RENEWAL_OPS_EMAIL_LIST` (daily failure digest; also editable in Renewals → Settings)
+- **Email:** `SMTP_*` plus `RENEWAL_OPS_EMAIL_LIST` (run summary with successful SMS/email deliveries + failures; also editable in Renewals → Settings)
 - **Claims ops email:** `CLAIMS_OPS_EMAIL_LIST` (daily digest and status alerts; also editable in Claims → Notifications). Falls back to `MANAGEMENT_EMAIL_LIST`.
 - **SMS:** Tilil Technologies — set `TILIL_API_KEY`, `TILIL_SHORTCODE` (sender ID), optional `TILIL_SERVICE_ID` (default `0`) on the **Vercel backend** service (laptop `.env` is not used in production). You can also paste the Tilil API key under **Renewals → Settings** (stored in the database). Endpoint `https://api.tililtech.com/sms/v3/sendsms`. Client reminders are SMS-only by default; WhatsApp/email are optional.
 - **WhatsApp:** `AFRICASTALKING_WHATSAPP_FROM` (AT) or `WHATSAPP_PHONE_ID` + `WHATSAPP_TOKEN` (Meta Cloud API). Enable the channel in Renewals → Settings.

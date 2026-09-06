@@ -216,7 +216,7 @@ export function Settings() {
         </div>
         <FormField
           label="Ops / renewals team emails"
-          hint="Comma-separated. Receives the daily failure-summary so no missed send is silent."
+          hint="Comma-separated. Receives the run summary email (successful SMS/email deliveries + failures)."
         >
           <input
             className="adt-input"

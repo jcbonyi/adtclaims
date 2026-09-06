@@ -870,6 +870,7 @@ async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, fo
     skipped: 0,
     alreadySent: 0,
   };
+  const runSuccesses = [];
 
   for (const policy of due) {
     const attempts = buildAttemptsForPolicy(policy, financiers, settings);
@@ -906,6 +907,16 @@ async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, fo
         delivery_status: result.deliveryStatus || result.status,
         sent_at: result.status === "sent" ? new Date().toISOString() : null,
       });
+      if (result.status === "sent") {
+        runSuccesses.push({
+          insuredName: policy.insured_name,
+          milestone: policy.daysUntil,
+          channel: attempt.channel,
+          recipientType: attempt.recipientType,
+          recipientName: attempt.recipientName,
+          recipientAddress: attempt.recipientAddress,
+        });
+      }
       if (attempt.channel === "email") {
         await sleep(result.status === "sent" ? 700 : 2000);
       } else if ((attempt.channel === "sms" || attempt.channel === "whatsapp") && delayMs && result.status === "sent") {
@@ -931,10 +942,14 @@ async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, fo
      WHERE l.status = 'failed' AND l.acknowledged_at IS NULL AND u.email IS NOT NULL AND u.email <> ''`
   );
   const digestTo = [...new Set([...ops, ...officerEmails.rows.map((r) => r.email)])];
-  if (failures.rows.length && digestTo.length) {
+  const shouldDigest =
+    digestTo.length > 0 && (runSuccesses.length > 0 || failures.rows.length > 0 || summary.attempted > 0);
+  if (shouldDigest) {
     await sendRenewalFailureDigest({
       to: digestTo,
+      successes: runSuccesses,
       failures: failures.rows.map(rowToLog),
+      summary,
       generatedAt: summary.ranAt,
     });
     await pool.query(

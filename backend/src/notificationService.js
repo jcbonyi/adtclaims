@@ -509,25 +509,128 @@ function buildRenewalEmail({ insuredName, registrations, renewalDate, daysUntil,
   return { subject, text, html };
 }
 
-async function sendRenewalFailureDigest({ to, failures, generatedAt }) {
-  const count = failures.length;
-  const subject = `ADT Renewals — ${count} delivery failure${count === 1 ? "" : "s"}`;
-  const lines = failures.slice(0, 80).map((f) => {
-    return `• ${f.insuredName} | T-${f.milestone} | ${f.channel.toUpperCase()} → ${f.recipientType} ${f.recipientAddress || "(no address)"} | ${f.errorMessage || f.status}`;
+async function sendRenewalFailureDigest({ to, failures = [], successes = [], summary = {}, generatedAt }) {
+  const failCount = failures.length;
+  const successCount = successes.length;
+  const smsOk = successes.filter((s) => String(s.channel || "").toLowerCase() === "sms");
+  const emailOk = successes.filter((s) => String(s.channel || "").toLowerCase() === "email");
+  const waOk = successes.filter((s) => String(s.channel || "").toLowerCase() === "whatsapp");
+
+  const subjectParts = [];
+  if (successCount) subjectParts.push(`${successCount} delivered`);
+  if (failCount) subjectParts.push(`${failCount} failure${failCount === 1 ? "" : "s"}`);
+  const subject = `ADT Renewals — ${subjectParts.length ? subjectParts.join(", ") : "run summary"}`;
+
+  const overview = [
+    `Renewal reminder job summary`,
+    `Generated: ${generatedAt || new Date().toISOString()}`,
+    `Due policies: ${summary.duePolicies ?? "—"}`,
+    `Attempted: ${summary.attempted ?? successCount + failCount}`,
+    `Delivered: ${summary.sent ?? successCount} (SMS ${smsOk.length}, Email ${emailOk.length}${waOk.length ? `, WhatsApp ${waOk.length}` : ""})`,
+    `Failed: ${summary.failed ?? failCount}`,
+    `Already sent (skipped): ${summary.alreadySent ?? 0}`,
+    `Skipped: ${summary.skipped ?? 0}`,
+  ];
+
+  const successLines = successes.slice(0, 100).map((s) => {
+    const name = s.insuredName || s.recipientName || "—";
+    const milestone = s.milestone != null ? `T-${s.milestone}` : "—";
+    const channel = String(s.channel || "").toUpperCase() || "—";
+    const who = `${s.recipientType || "recipient"} ${s.recipientAddress || "(no address)"}`;
+    return `• ${name} | ${milestone} | ${channel} → ${who}`;
   });
+
+  const failureLines = failures.slice(0, 80).map((f) => {
+    return `• ${f.insuredName} | T-${f.milestone} | ${String(f.channel || "").toUpperCase()} → ${f.recipientType} ${f.recipientAddress || "(no address)"} | ${f.errorMessage || f.status}`;
+  });
+
   const text = [
-    `The renewal reminder job recorded ${count} failed send(s). No client renewal should be silently missed.`,
-    `Generated: ${generatedAt}`,
+    ...overview,
     "",
-    ...lines,
-    failures.length > 80 ? `…and ${failures.length - 80} more` : "",
+    successCount
+      ? `DELIVERED (${successCount}) — SMS ${smsOk.length}, Email ${emailOk.length}${waOk.length ? `, WhatsApp ${waOk.length}` : ""}`
+      : "DELIVERED — none in this run",
+    ...successLines,
+    successes.length > 100 ? `…and ${successes.length - 100} more successes` : "",
     "",
-    "Open the Renewals portal → Delivery Failures to retry or acknowledge.",
+    failCount
+      ? `FAILURES (${failCount}) — no client renewal should be silently missed`
+      : "FAILURES — none open",
+    ...failureLines,
+    failures.length > 80 ? `…and ${failures.length - 80} more failures` : "",
+    "",
+    "Open the Renewals portal → Delivery Failures to retry or acknowledge failed sends.",
   ]
     .filter((line) => line !== "")
     .join("\n");
 
-  return sendEmail({ to, subject, text });
+  const htmlSuccessRows = successes
+    .slice(0, 100)
+    .map((s) => {
+      const name = s.insuredName || s.recipientName || "—";
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">T-${s.milestone ?? "—"}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${String(s.channel || "").toUpperCase()}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${s.recipientType || ""} ${s.recipientAddress || ""}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const htmlFailRows = failures
+    .slice(0, 80)
+    .map((f) => {
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${f.insuredName || "—"}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">T-${f.milestone ?? "—"}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${String(f.channel || "").toUpperCase()}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${f.recipientType || ""} ${f.recipientAddress || ""}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#b91c1c">${f.errorMessage || f.status || ""}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;color:#1a2332;line-height:1.5;max-width:720px">
+      <h2 style="margin:0 0 8px;font-size:18px">ADT Renewals — run summary</h2>
+      <p style="margin:0 0 16px;color:#64748b;font-size:13px">Generated ${generatedAt || ""}</p>
+      <table style="border-collapse:collapse;margin-bottom:20px">
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Due policies</td><td><strong>${summary.duePolicies ?? "—"}</strong></td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Attempted</td><td><strong>${summary.attempted ?? "—"}</strong></td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Delivered</td><td><strong style="color:#047857">${summary.sent ?? successCount}</strong> (SMS ${smsOk.length}, Email ${emailOk.length})</td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Failed</td><td><strong style="color:#b91c1c">${summary.failed ?? failCount}</strong></td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Already sent</td><td>${summary.alreadySent ?? 0}</td></tr>
+      </table>
+      <h3 style="margin:16px 0 8px;font-size:15px;color:#047857">Delivered (${successCount})</h3>
+      ${
+        successCount
+          ? `<table style="border-collapse:collapse;width:100%;font-size:13px">
+              <thead><tr style="background:#ecfdf5;text-align:left">
+                <th style="padding:6px 8px">Insured</th><th style="padding:6px 8px">Milestone</th>
+                <th style="padding:6px 8px">Channel</th><th style="padding:6px 8px">Recipient</th>
+              </tr></thead>
+              <tbody>${htmlSuccessRows}</tbody>
+            </table>`
+          : `<p style="color:#64748b">No successful deliveries in this run.</p>`
+      }
+      <h3 style="margin:24px 0 8px;font-size:15px;color:#b91c1c">Failures (${failCount})</h3>
+      ${
+        failCount
+          ? `<table style="border-collapse:collapse;width:100%;font-size:13px">
+              <thead><tr style="background:#fef2f2;text-align:left">
+                <th style="padding:6px 8px">Insured</th><th style="padding:6px 8px">Milestone</th>
+                <th style="padding:6px 8px">Channel</th><th style="padding:6px 8px">Recipient</th>
+                <th style="padding:6px 8px">Error</th>
+              </tr></thead>
+              <tbody>${htmlFailRows}</tbody>
+            </table>`
+          : `<p style="color:#64748b">No open failures.</p>`
+      }
+      <p style="margin-top:20px;color:#64748b;font-size:12px">Open Renewals → Delivery Failures to retry or acknowledge failed sends.</p>
+    </div>
+  `;
+
+  return sendEmail({ to, subject, text, html });
 }
 
 async function sendTestEmail(to) {
