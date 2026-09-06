@@ -156,7 +156,7 @@ export default function ClaimsNotificationsPage() {
           SMTP {form.smtpConfigured ? "configured" : "not configured"}
         </span>
         <span className={`rounded-full border px-3 py-1 ${form.smsConfigured ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-          SMS {form.smsConfigured ? "configured" : "not configured"}
+          SMS (Tilil) {form.smsConfigured ? "configured" : "not configured"}
         </span>
         <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">
           Last run: {form.lastRunAt ? new Date(form.lastRunAt).toLocaleString() : "never"}

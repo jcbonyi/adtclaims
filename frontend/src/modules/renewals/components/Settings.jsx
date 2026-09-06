@@ -127,14 +127,14 @@ export function Settings() {
     <>
       <PageHeader
         title="Renewal settings"
-        subtitle="Templates, WhatsApp, quiet hours, and who receives the daily failure-summary email."
+        subtitle="Templates, Tilil SMS, WhatsApp, quiet hours, and who receives the daily failure-summary email."
       />
 
       {message ? <AlertBanner tone="info">{message}</AlertBanner> : null}
 
       <div className="rn-config-pills">
         <span className={`rn-pill${form.smsConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
-          SMS {form.smsConfigured ? "ready" : "not configured"}
+          SMS (Tilil) {form.smsConfigured ? "ready" : "not configured"}
         </span>
         <span className={`rn-pill${form.whatsappConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
           WhatsApp {form.whatsappConfigured ? "ready" : "not configured"}

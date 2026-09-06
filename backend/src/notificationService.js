@@ -58,7 +58,103 @@ function isSmtpConfigured() {
 }
 
 function isSmsConfigured() {
-  return !!(process.env.AFRICASTALKING_USERNAME && process.env.AFRICASTALKING_API_KEY);
+  return !!String(process.env.TILIL_API_KEY || "").trim();
+}
+
+function tililEndpoint() {
+  return String(process.env.TILIL_SMS_URL || "https://api.tililtech.com/sms/v3/sendsms").trim();
+}
+
+function tililShortcode() {
+  return String(process.env.TILIL_SHORTCODE || process.env.TILIL_SENDER_ID || "").trim();
+}
+
+function tililServiceId() {
+  const raw = process.env.TILIL_SERVICE_ID;
+  if (raw === undefined || raw === "") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Tilil accepts 07… or 254…; normalize from +254 / 07 / 7… */
+function toTililMobile(raw) {
+  const cleaned = String(raw || "").replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+  let digits = cleaned.replace(/^\+/, "");
+  if (digits.startsWith("254") && digits.length >= 12) return digits.slice(0, 12);
+  if (digits.startsWith("0") && digits.length >= 10) return `254${digits.slice(1, 10)}`;
+  if (/^[17]\d{8}$/.test(digits)) return `254${digits}`;
+  if (/^\d{9}$/.test(digits)) return `254${digits}`;
+  return digits;
+}
+
+function parseTililResponse(json) {
+  const rows = Array.isArray(json) ? json : json ? [json] : [];
+  const first = rows[0] || {};
+  const statusCode = String(first.status_code ?? first.statusCode ?? "");
+  const ok = statusCode === "1000";
+  return {
+    ok,
+    statusCode,
+    statusDesc: String(first.status_desc || first.statusDesc || first.message || "").trim(),
+    messageId: first.message_id ?? first.messageId ?? null,
+    raw: json,
+  };
+}
+
+async function sendTililSmsOne({ mobile, message }) {
+  const apiKey = String(process.env.TILIL_API_KEY || "").trim();
+  const shortcode = tililShortcode();
+  if (!apiKey) return { sent: false, reason: "sms_not_configured", providerRef: null };
+  if (!shortcode) return { sent: false, reason: "tilil_shortcode_missing", providerRef: null };
+  if (!mobile) return { sent: false, reason: "no_recipient", providerRef: null };
+
+  const res = await fetch(tililEndpoint(), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      api_key: apiKey,
+      service_id: tililServiceId(),
+      mobile,
+      response_type: "json",
+      shortcode,
+      message: String(message || ""),
+    }),
+  });
+
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = { raw: text };
+  }
+
+  const parsed = parseTililResponse(json);
+  if (!res.ok && !parsed.ok) {
+    return {
+      sent: false,
+      reason: parsed.statusDesc || `http_${res.status}`,
+      providerRef: parsed.messageId != null ? String(parsed.messageId) : null,
+      raw: json,
+    };
+  }
+  if (!parsed.ok) {
+    return {
+      sent: false,
+      reason: parsed.statusDesc || `tilil_${parsed.statusCode || "failed"}`,
+      providerRef: parsed.messageId != null ? String(parsed.messageId) : null,
+      raw: json,
+    };
+  }
+  return {
+    sent: true,
+    providerRef: parsed.messageId != null ? String(parsed.messageId) : null,
+    raw: json,
+  };
 }
 
 function sleep(ms) {
@@ -216,53 +312,37 @@ async function sendSms({ to, message }) {
     console.log(`[sms skipped] ${to}: ${String(message || "").slice(0, 80)}`);
     return { sent: false, reason: "sms_not_configured", providerRef: null };
   }
-  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (!tililShortcode()) {
+    return { sent: false, reason: "tilil_shortcode_missing", providerRef: null };
+  }
+
+  const recipients = (Array.isArray(to) ? to : [to])
+    .map((n) => toTililMobile(n))
+    .filter(Boolean);
   if (!recipients.length) return { sent: false, reason: "no_recipient", providerRef: null };
 
-  const username = process.env.AFRICASTALKING_USERNAME;
-  const apiKey = process.env.AFRICASTALKING_API_KEY;
-  const from = process.env.AFRICASTALKING_SENDER || undefined;
-  const sandbox = process.env.AFRICASTALKING_SANDBOX === "true";
-  const url = sandbox
-    ? "https://api.sandbox.africastalking.com/version1/messaging"
-    : "https://api.africastalking.com/version1/messaging";
-
-  const body = new URLSearchParams({
-    username,
-    to: recipients.join(","),
-    message,
-  });
-  if (from) body.set("from", from);
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      apiKey,
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-  const text = await res.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = { raw: text };
+  const results = [];
+  for (const mobile of recipients) {
+    const result = await sendTililSmsOne({ mobile, message });
+    results.push({ mobile, ...result });
   }
 
-  const recipient = json?.SMSMessageData?.Recipients?.[0];
-  const statusCode = Number(recipient?.statusCode);
-  const ok = res.ok && (statusCode === 100 || statusCode === 101 || recipient?.status === "Success");
-  if (!ok) {
-    const reason =
-      recipient?.status ||
-      json?.SMSMessageData?.Message ||
-      json?.raw ||
-      `http_${res.status}`;
-    return { sent: false, reason: String(reason), providerRef: recipient?.messageId || null, raw: json };
+  const sent = results.filter((r) => r.sent);
+  if (!sent.length) {
+    const first = results[0] || {};
+    return {
+      sent: false,
+      reason: first.reason || "tilil_send_failed",
+      providerRef: first.providerRef || null,
+      raw: results,
+    };
   }
-  return { sent: true, providerRef: recipient?.messageId || null, raw: json };
+  return {
+    sent: true,
+    providerRef: sent.map((r) => r.providerRef).filter(Boolean).join(",") || null,
+    raw: results,
+    partialFailure: sent.length < results.length,
+  };
 }
 
 function valuationSummary(v) {

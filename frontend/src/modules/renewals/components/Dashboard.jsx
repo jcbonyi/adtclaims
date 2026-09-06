@@ -54,7 +54,7 @@ export function Dashboard({ onOpenPolicy }) {
 
       <div className="rn-config-pills">
         <span className={`rn-pill${settings.smsConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
-          SMS {settings.smsConfigured ? "configured" : "not configured"}
+          SMS (Tilil) {settings.smsConfigured ? "configured" : "not configured"}
         </span>
         <span className={`rn-pill${settings.whatsappConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
           WhatsApp {settings.whatsappConfigured ? "configured" : "not configured"}
