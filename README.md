@@ -120,17 +120,17 @@ Point your domain (or subdomain, e.g. `claims.example.com`) to the server’s pu
 
 ## Deploy frontend on Vercel
 
-The repo includes [`vercel.json`](vercel.json) with **Services** entries `frontend` (Vite, `/`) and `backend` (Express, `/_/backend`), matching Vercel’s monorepo template.
+The repo includes [`vercel.json`](vercel.json) with **Services** (`frontend` + `backend`) and top-level **rewrites** so `/api/*` goes to Express and everything else to Vite.
 
-**If the project framework is not “Services”:** In Vercel → Project → Settings → General, set **Root Directory** to `frontend` and **Framework Preset** to **Vite**, then you can remove `experimentalServices` and host the API separately.
+**If the project framework is not “Services”:** In Vercel → Project → Settings → General, set **Framework Preset** to **Services** (required for multi-service `vercel.json`). Then Redeploy.
 
-1. Push this repository to GitHub and import it in [Vercel](https://vercel.com). If Vercel enables **Services** for this monorepo, keep the provided `vercel.json`.
+1. Push this repository to GitHub and import it in [Vercel](https://vercel.com).
 2. In Vercel **Project → Settings → Environment Variables**, set:
-   - **`VITE_API_BASE_URL`** (frontend / Production): `https://your-project.vercel.app/_/backend/api` (no trailing slash). `*.vercel.app` hosts also default to `/_/backend/api` if this is unset. For an API on Railway/Render, use that origin plus `/api`.
-   - **`DATABASE_URL`** (backend / Production): a **public hosted** Postgres URL. `localhost` and cPanel-only Postgres **time out** from Vercel. Use [Neon](https://neon.tech) **pooled** connection (`-pooler` in the host) or Supabase **pooler** (`pooler.supabase.com`, port `6543`). Then Redeploy. Confirm at `…/_/backend/api/health` (`ok: true`, `dbMode: "postgres"`).
+   - **`VITE_API_BASE_URL`** (frontend / Production): `/api` (or leave unset — production builds default to `/api`). Delete any old value like `…/_/backend/api`. For an API on Railway/Render, use that origin plus `/api`.
+   - **`DATABASE_URL`** (backend / Production): a **public hosted** Postgres URL. `localhost` and cPanel-only Postgres **time out** from Vercel. Use [Neon](https://neon.tech) **pooled** connection (`-pooler` in the host) or Supabase **pooler** (`pooler.supabase.com`, port `6543`). Then Redeploy. Confirm at `…/api/health` (`ok: true`, `dbMode: "postgres"`).
    - **`JWT_SECRET`** and the other vars from `backend/.env.example` on the **backend** service.
 3. Redeploy after changing env vars so Vite picks them up at build time.
-4. After deploy, open `https://your-project.vercel.app/_/backend/api/health`. You should see `"ok": true` and `"dbMode": "postgres"`. If `"ok"` is false, the JSON `error` field is the real login 500 cause.
+4. After deploy, open `https://your-project.vercel.app/api/health`. You should see `"ok": true` and `"dbMode": "postgres"`. If `"ok"` is false, the JSON `error` field is the real login failure cause.
 
 ### Vercel SMTP (daily claims-register email)
 
@@ -164,10 +164,8 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
    - **Apex** (`example.com`): use the **A** records (or registrar **ALIAS/ANAME**) that Vercel shows for your project—do not guess IPs.
 
 3. **Point the frontend at the API on that domain**  
-   After the domain works, set **`VITE_API_BASE_URL`** for **Production** (and Preview if you use it) to the **HTTPS** API base your users will hit:
-   - **Both services on this Vercel project:**  
-     `https://YOUR_DOMAIN/_/backend/api`  
-     (replace `YOUR_DOMAIN` with `claims.example.com` or `example.com`, no trailing slash.)
+   After the domain works, set **`VITE_API_BASE_URL`** for **Production** (and Preview if you use it) to the API base your users will hit:
+   - **Both services on this Vercel project:** `/api` (same-origin; preferred) or leave unset.
    - **API on another host** (Railway, Render, `api.example.com`, etc.):  
      `https://your-api-host.example.com/api`
 
@@ -236,7 +234,7 @@ Configure in Claims → Notifications (**SMTP settings**) or `backend/.env` (`SM
 
 - **Immediate:** new claim logged; high-signal status changes (RA Issued, Released, Closed/Paid/Repudiated, Pending Documents, Awaiting Assessment, Litigation, Payment Processing). Optional: email on every status change.
 - **Daily 07:15:** aging chases at 8 / 15 / 30+ days open (ops digest email is paused; set `CLAIMS_OPS_DIGEST_ENABLED=true` to resume).
-- **Daily 17:30 EAT:** branded Excel of **open** claims only, with **Motor** and **Non-Motor** tabs (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/_/backend/api/claims-notifications/cron/daily-register` at 14:30 UTC (17:30 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
+- **Daily 17:30 EAT:** branded Excel of **open** claims only, with **Motor** and **Non-Motor** tabs (Insurer, Cover Type, Insured Name, Reg No, Reported to Insurer, Status) emailed to `aisha@adtinsurance.co.ke`, `jacob@adtinsurance.co.ke`, and `communications@adtinsurance.co.ke`. Override with `CLAIMS_DAILY_REGISTER_EMAIL_LIST`. On Vercel, a cron hits `/api/claims-notifications/cron/daily-register` at 14:30 UTC (17:30 EAT); set `CRON_SECRET` (or `ADMIN_RESET_KEY`). Admins can also click **Send register now** on Claims → Notifications.
 - Admins, Claims Officers, and Operations can click **Run now**. The send log is on the same page.
 
 ## Suggested Next Steps

@@ -1,24 +1,37 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "experimentalServices": {
+  "services": {
     "frontend": {
-      "entrypoint": "frontend",
-      "routePrefix": "/",
+      "root": "frontend",
       "framework": "vite"
     },
     "backend": {
-      "entrypoint": "backend",
-      "routePrefix": "/_/backend",
-      "framework": "express"
+      "root": "backend",
+      "framework": "express",
+      "entrypoint": "src/index.js"
     }
   },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": { "service": "backend" }
+    },
+    {
+      "source": "/_/backend/(.*)",
+      "destination": { "service": "backend" }
+    },
+    {
+      "source": "/(.*)",
+      "destination": { "service": "frontend" }
+    }
+  ],
   "crons": [
     {
-      "path": "/_/backend/api/claims-notifications/cron/daily-register",
+      "path": "/api/claims-notifications/cron/daily-register",
       "schedule": "30 14 * * *"
     },
     {
-      "path": "/_/backend/api/renewals/cron/reminders",
+      "path": "/api/renewals/cron/reminders",
       "schedule": "0 5 * * *"
     }
   ]

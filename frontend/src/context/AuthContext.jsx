@@ -14,10 +14,10 @@ function apiErrorMessage(error, fallback) {
   }
   const status = error.response?.status;
   if (!error.response && error.message) {
-    return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL in Vercel is https://your-app.vercel.app/_/backend/api`;
+    return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL is /api and https://YOUR-HOST/api/health returns JSON.`;
   }
   if (status === 405) {
-    return `${fallback} (HTTP 405). The login request did not reach the API — usually the frontend is calling /api instead of /_/backend/api. Redeploy after setting VITE_API_BASE_URL=/_/backend/api on the frontend, then hard-refresh.`;
+    return `${fallback} (HTTP 405). Login POST never reached Express. On Vercel: Project → Settings → General → Framework Preset must be "Services", then Redeploy. Confirm https://YOUR-HOST/api/health returns JSON.`;
   }
   if (status === 503) {
     const serverMsg = typeof msg === "string" && msg.trim() ? msg.trim() : "";

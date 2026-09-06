@@ -3,24 +3,19 @@ import axios from "axios";
 /**
  * Resolve API base for axios.
  * - Local Vite: `/api` (proxied to Express)
- * - Vercel services (any domain): `/_/backend/api`
- * - Override: VITE_API_BASE_URL (absolute or relative, no trailing slash)
+ * - Vercel (services rewrites): `/api` → backend service
+ * - Override: VITE_API_BASE_URL (no trailing slash)
  */
 function resolveApiBase() {
   const configured = String(import.meta.env.VITE_API_BASE_URL || "")
     .trim()
     .replace(/^["']|["']$/g, "")
     .replace(/\/$/, "");
-  if (configured) return configured;
-
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host.endsWith(".vercel.app") || host.includes("adtclaims") || import.meta.env.PROD) {
-      return "/_/backend/api";
-    }
+  if (configured) {
+    // Legacy absolute URL that pointed at the old experimentalServices prefix
+    if (/\/_\/backend\/api$/i.test(configured)) return "/api";
+    return configured;
   }
-
-  if (import.meta.env.PROD) return "/_/backend/api";
   return "/api";
 }
 
