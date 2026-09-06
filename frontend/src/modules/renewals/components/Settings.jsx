@@ -45,8 +45,13 @@ export function Settings() {
         quietStartHour: Number(form.quietStartHour),
         quietEndHour: Number(form.quietEndHour),
         smsPerMinute: Number(form.smsPerMinute),
+        tililApiKey: form.tililApiKey || undefined,
+        tililShortcode: form.tililShortcode,
+        tililServiceId: form.tililServiceId,
       });
-      setMessage("Settings saved.");
+      const refreshed = await fetchRenewalSettings();
+      setForm({ ...refreshed, tililApiKey: "" });
+      setMessage(refreshed.smsConfigured ? "Settings saved. Tilil SMS is ready." : "Settings saved. Tilil SMS is still not configured — add the API key below or on Vercel.");
     } catch (err) {
       setMessage(err.response?.data?.message || "Save failed");
     } finally {
@@ -127,7 +132,7 @@ export function Settings() {
     <>
       <PageHeader
         title="Renewal settings"
-        subtitle="Templates, Tilil SMS, WhatsApp, quiet hours, and who receives the daily failure-summary email."
+        subtitle="SMS reminders via Tilil (WhatsApp/email optional later). Ops digests still use SMTP."
       />
 
       {message ? <AlertBanner tone="info">{message}</AlertBanner> : null}
@@ -137,13 +142,49 @@ export function Settings() {
           SMS (Tilil) {form.smsConfigured ? "ready" : "not configured"}
         </span>
         <span className={`rn-pill${form.whatsappConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
-          WhatsApp {form.whatsappConfigured ? "ready" : "not configured"}
+          WhatsApp {form.whatsappConfigured ? "ready" : "later"}
         </span>
         <span className={`rn-pill${form.smtpConfigured ? " rn-pill--ok" : " rn-pill--warn"}`}>
           SMTP {form.smtpConfigured ? "ready" : "not configured"}
         </span>
         <span className="rn-pill">Last run: {form.lastRunAt ? new Date(form.lastRunAt).toLocaleString() : "never"}</span>
       </div>
+
+      <Card>
+        <h3 className="adt-card-header">Tilil SMS (required for client reminders)</h3>
+        <p className="rn-muted">
+          Phone numbers in the register are fine — failures with <code>sms_not_configured</code> mean the Tilil API key was missing on the server. Save it here (stored in the database) or set <code>TILIL_*</code> on the Vercel backend service.
+        </p>
+        <div className="adt-form-grid">
+          <FormField
+            label="Tilil API key"
+            hint={form.tililApiKeySet ? "Key is saved. Leave blank to keep the current key." : "Paste your Tilil api_key"}
+          >
+            <input
+              className="adt-input"
+              type="password"
+              autoComplete="off"
+              value={form.tililApiKey || ""}
+              onChange={(e) => patch("tililApiKey", e.target.value)}
+              placeholder={form.tililApiKeySet ? "•••••••• (unchanged if blank)" : "Tilil api_key"}
+            />
+          </FormField>
+          <FormField label="Shortcode / sender ID">
+            <input
+              className="adt-input"
+              value={form.tililShortcode || "ADT_INS.LTD"}
+              onChange={(e) => patch("tililShortcode", e.target.value)}
+            />
+          </FormField>
+          <FormField label="Service ID">
+            <input
+              className="adt-input"
+              value={form.tililServiceId ?? "0"}
+              onChange={(e) => patch("tililServiceId", e.target.value)}
+            />
+          </FormField>
+        </div>
+      </Card>
 
       <Card>
         <h3 className="adt-card-header">Channels & quiet hours</h3>
@@ -153,11 +194,11 @@ export function Settings() {
         </label>
         <label className="val-field" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" checked={form.emailEnabled} onChange={(e) => patch("emailEnabled", e.target.checked)} />
-          Enable email reminders
+          Enable email reminders (optional — leave off for SMS-only)
         </label>
         <label className="val-field" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" checked={form.whatsappEnabled} onChange={(e) => patch("whatsappEnabled", e.target.checked)} />
-          Enable WhatsApp reminders
+          Enable WhatsApp reminders (configure later)
         </label>
         <div className="adt-form-grid">
           <FormField label="Callback number" hint="Inserted into templates as {callbackNumber}">

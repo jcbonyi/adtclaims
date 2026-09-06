@@ -57,23 +57,74 @@ function isSmtpConfigured() {
   return !!(cfg.host && cfg.from);
 }
 
+let tililOverride = null;
+
+function envTilil() {
+  const serviceRaw = process.env.TILIL_SERVICE_ID;
+  let serviceId = 0;
+  if (serviceRaw !== undefined && serviceRaw !== "") {
+    const n = Number(serviceRaw);
+    if (Number.isFinite(n)) serviceId = n;
+  }
+  return {
+    apiKey: String(process.env.TILIL_API_KEY || "").trim(),
+    shortcode: String(process.env.TILIL_SHORTCODE || process.env.TILIL_SENDER_ID || "").trim(),
+    serviceId,
+    url: String(process.env.TILIL_SMS_URL || "https://api.tililtech.com/sms/v3/sendsms").trim(),
+  };
+}
+
+/** Prefer DB-saved Tilil credentials (Vercel UI) over env when apiKey is set. */
+function applyTililSettings(partial) {
+  const apiKey = String(partial?.apiKey || "").trim();
+  if (!apiKey) {
+    tililOverride = null;
+    return;
+  }
+  const serviceRaw = partial?.serviceId;
+  let serviceId = 0;
+  if (serviceRaw !== undefined && serviceRaw !== "" && serviceRaw !== null) {
+    const n = Number(serviceRaw);
+    if (Number.isFinite(n)) serviceId = n;
+  }
+  tililOverride = {
+    apiKey,
+    shortcode: String(partial?.shortcode || "").trim(),
+    serviceId,
+    url: String(partial?.url || "").trim(),
+  };
+}
+
+function resolvedTilil() {
+  const env = envTilil();
+  if (tililOverride?.apiKey) {
+    return {
+      apiKey: tililOverride.apiKey,
+      shortcode: tililOverride.shortcode || env.shortcode,
+      serviceId:
+        tililOverride.serviceId !== undefined && tililOverride.serviceId !== null
+          ? tililOverride.serviceId
+          : env.serviceId,
+      url: tililOverride.url || env.url,
+    };
+  }
+  return env;
+}
+
 function isSmsConfigured() {
-  return !!String(process.env.TILIL_API_KEY || "").trim();
+  return !!resolvedTilil().apiKey;
 }
 
 function tililEndpoint() {
-  return String(process.env.TILIL_SMS_URL || "https://api.tililtech.com/sms/v3/sendsms").trim();
+  return resolvedTilil().url || "https://api.tililtech.com/sms/v3/sendsms";
 }
 
 function tililShortcode() {
-  return String(process.env.TILIL_SHORTCODE || process.env.TILIL_SENDER_ID || "").trim();
+  return resolvedTilil().shortcode;
 }
 
 function tililServiceId() {
-  const raw = process.env.TILIL_SERVICE_ID;
-  if (raw === undefined || raw === "") return 0;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
+  return resolvedTilil().serviceId;
 }
 
 /** Tilil accepts 07… or 254…; normalize from +254 / 07 / 7… */
@@ -103,13 +154,20 @@ function parseTililResponse(json) {
 }
 
 async function sendTililSmsOne({ mobile, message }) {
-  const apiKey = String(process.env.TILIL_API_KEY || "").trim();
-  const shortcode = tililShortcode();
-  if (!apiKey) return { sent: false, reason: "sms_not_configured", providerRef: null };
+  const cfg = resolvedTilil();
+  const apiKey = cfg.apiKey;
+  const shortcode = cfg.shortcode;
+  if (!apiKey) {
+    return {
+      sent: false,
+      reason: "sms_not_configured (set TILIL_API_KEY on Vercel backend, or save Tilil key under Renewals → Settings)",
+      providerRef: null,
+    };
+  }
   if (!shortcode) return { sent: false, reason: "tilil_shortcode_missing", providerRef: null };
   if (!mobile) return { sent: false, reason: "no_recipient", providerRef: null };
 
-  const res = await fetch(tililEndpoint(), {
+  const res = await fetch(cfg.url || tililEndpoint(), {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -117,7 +175,7 @@ async function sendTililSmsOne({ mobile, message }) {
     },
     body: JSON.stringify({
       api_key: apiKey,
-      service_id: tililServiceId(),
+      service_id: cfg.serviceId,
       mobile,
       response_type: "json",
       shortcode,
@@ -310,7 +368,11 @@ async function sendEmailNow({ to, subject, text, html, attachments }) {
 async function sendSms({ to, message }) {
   if (!isSmsConfigured()) {
     console.log(`[sms skipped] ${to}: ${String(message || "").slice(0, 80)}`);
-    return { sent: false, reason: "sms_not_configured", providerRef: null };
+    return {
+      sent: false,
+      reason: "sms_not_configured (set TILIL_API_KEY on Vercel backend, or save Tilil key under Renewals → Settings)",
+      providerRef: null,
+    };
   }
   if (!tililShortcode()) {
     return { sent: false, reason: "tilil_shortcode_missing", providerRef: null };
@@ -591,6 +653,8 @@ module.exports = {
   applySmtpSettings,
   resolvedSmtp,
   isSmsConfigured,
+  applyTililSettings,
+  resolvedTilil,
   isWhatsAppConfigured,
   notifyValuationEvent,
   sendTestEmail,

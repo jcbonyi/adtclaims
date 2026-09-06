@@ -21,6 +21,7 @@ const {
   isSmtpConfigured,
   isSmsConfigured,
   isWhatsAppConfigured,
+  applyTililSettings,
 } = require("./notificationService");
 const {
   DEFAULT_SMS_TEMPLATE,
@@ -112,6 +113,9 @@ const SETTINGS_SNAPSHOT_COLUMNS = [
   "quiet_start_hour",
   "quiet_end_hour",
   "sms_per_minute",
+  "tilil_api_key",
+  "tilil_shortcode",
+  "tilil_service_id",
   "last_run_at",
   "last_failure_digest_at",
   "updated_at",
@@ -367,7 +371,7 @@ async function ensureRenewalsTables(pool) {
       id INTEGER PRIMARY KEY DEFAULT 1,
       ops_email_list TEXT NOT NULL DEFAULT '',
       sms_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      email_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       last_run_at TIMESTAMPTZ NULL,
       last_failure_digest_at TIMESTAMPTZ NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -393,6 +397,9 @@ async function ensureRenewalsTables(pool) {
   await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS quiet_start_hour INTEGER NOT NULL DEFAULT 8;`);
   await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS quiet_end_hour INTEGER NOT NULL DEFAULT 18;`);
   await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS sms_per_minute INTEGER NOT NULL DEFAULT 30;`);
+  await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS tilil_api_key TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS tilil_shortcode TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS tilil_service_id TEXT NOT NULL DEFAULT '0';`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS renewal_follow_ups (
@@ -430,20 +437,41 @@ async function ensureRenewalsTables(pool) {
   const settingsCount = await pool.query("SELECT COUNT(*)::int AS total FROM renewal_settings");
   if (settingsCount.rows[0].total === 0) {
     await pool.query(
-      `INSERT INTO renewal_settings (id, ops_email_list, sms_enabled, email_enabled)
-       VALUES (1, '', TRUE, TRUE)`
+      `INSERT INTO renewal_settings (id, ops_email_list, sms_enabled, email_enabled, whatsapp_enabled)
+       VALUES (1, '', TRUE, FALSE, FALSE)`
     );
+  }
+}
+
+function applyTililFromRenewalSettings(settings) {
+  const key = String(settings?.tilil_api_key || "").trim();
+  if (!key) {
+    applyTililSettings(null);
+    return;
+  }
+  applyTililSettings({
+    apiKey: key,
+    shortcode: settings.tilil_shortcode,
+    serviceId: settings.tilil_service_id,
+  });
+}
+
+async function loadTililFromDb(pool) {
+  try {
+    await getSettings(pool);
+  } catch (error) {
+    console.warn("Could not load Tilil SMS settings from database:", error.message);
   }
 }
 
 async function getSettings(pool) {
   const result = await pool.query("SELECT * FROM renewal_settings ORDER BY id ASC LIMIT 1");
   const row = result.rows[0] || {};
-  return {
+  const settings = {
     id: row.id || 1,
     ops_email_list: row.ops_email_list || "",
     sms_enabled: row.sms_enabled !== false,
-    email_enabled: row.email_enabled !== false,
+    email_enabled: !!row.email_enabled,
     whatsapp_enabled: !!row.whatsapp_enabled,
     sms_template: row.sms_template || DEFAULT_SMS_TEMPLATE,
     whatsapp_template: row.whatsapp_template || DEFAULT_WHATSAPP_TEMPLATE,
@@ -456,7 +484,12 @@ async function getSettings(pool) {
     sms_per_minute: row.sms_per_minute ?? 30,
     last_run_at: row.last_run_at || null,
     last_failure_digest_at: row.last_failure_digest_at || null,
+    tilil_api_key: row.tilil_api_key || "",
+    tilil_shortcode: row.tilil_shortcode || process.env.TILIL_SHORTCODE || "ADT_INS.LTD",
+    tilil_service_id: row.tilil_service_id ?? process.env.TILIL_SERVICE_ID ?? "0",
   };
+  applyTililFromRenewalSettings(settings);
+  return settings;
 }
 
 async function seedRenewalsIfEmpty(pool, nextSerialId) {
@@ -1259,6 +1292,9 @@ function registerRenewalRoutes(app, deps) {
         smsPerMinute: settings.sms_per_minute,
         lastRunAt: settings.last_run_at,
         lastFailureDigestAt: settings.last_failure_digest_at,
+        tililApiKeySet: Boolean(String(settings.tilil_api_key || "").trim() || process.env.TILIL_API_KEY),
+        tililShortcode: settings.tilil_shortcode || "ADT_INS.LTD",
+        tililServiceId: String(settings.tilil_service_id ?? "0"),
         smtpConfigured: isSmtpConfigured(),
         smsConfigured: isSmsConfigured(),
         whatsappConfigured: isWhatsAppConfigured(),
@@ -1282,7 +1318,7 @@ function registerRenewalRoutes(app, deps) {
         .object({
           opsEmailList: z.string().optional().default(""),
           smsEnabled: z.boolean(),
-          emailEnabled: z.boolean(),
+          emailEnabled: z.boolean().optional().default(false),
           whatsappEnabled: z.boolean().optional().default(false),
           smsTemplate: z.string().optional().default(""),
           whatsappTemplate: z.string().optional().default(""),
@@ -1293,14 +1329,25 @@ function registerRenewalRoutes(app, deps) {
           quietStartHour: z.number().int().min(0).max(23).optional().default(8),
           quietEndHour: z.number().int().min(0).max(23).optional().default(18),
           smsPerMinute: z.number().int().min(1).max(300).optional().default(30),
+          tililApiKey: z.string().optional(),
+          tililShortcode: z.string().optional().default(""),
+          tililServiceId: z.union([z.string(), z.number()]).optional().default("0"),
         })
         .parse(req.body);
+      const current = await getSettings(pool);
+      const nextKey =
+        body.tililApiKey === undefined || body.tililApiKey === ""
+          ? current.tilil_api_key
+          : String(body.tililApiKey).trim();
+      const nextShortcode = String(body.tililShortcode || "").trim() || current.tilil_shortcode || "ADT_INS.LTD";
+      const nextServiceId = String(body.tililServiceId ?? current.tilil_service_id ?? "0");
       await pool.query(
         `UPDATE renewal_settings SET
           ops_email_list = $1, sms_enabled = $2, email_enabled = $3, whatsapp_enabled = $4,
           sms_template = $5, whatsapp_template = $6, email_subject_template = $7,
           email_body_template = $8, financier_sms_template = $9, callback_number = $10,
-          quiet_start_hour = $11, quiet_end_hour = $12, sms_per_minute = $13, updated_at = NOW()
+          quiet_start_hour = $11, quiet_end_hour = $12, sms_per_minute = $13,
+          tilil_api_key = $14, tilil_shortcode = $15, tilil_service_id = $16, updated_at = NOW()
          WHERE id = (SELECT id FROM renewal_settings ORDER BY id ASC LIMIT 1)`,
         [
           body.opsEmailList,
@@ -1316,10 +1363,18 @@ function registerRenewalRoutes(app, deps) {
           body.quietStartHour,
           body.quietEndHour,
           body.smsPerMinute,
+          nextKey,
+          nextShortcode,
+          nextServiceId,
         ]
       );
+      applyTililSettings({
+        apiKey: nextKey,
+        shortcode: nextShortcode,
+        serviceId: nextServiceId,
+      });
       await onPersist?.();
-      return res.json({ ok: true });
+      return res.json({ ok: true, smsConfigured: isSmsConfigured() });
     } catch (err) {
       if (err?.issues) return res.status(400).json({ message: "Invalid settings" });
       console.error(err);
@@ -2175,6 +2230,7 @@ module.exports = {
   ensureRenewalsTables,
   seedRenewalsIfEmpty,
   registerRenewalRoutes,
+  loadTililFromDb,
   runRenewalReminderJob,
   pollDeliveryReports,
   normalizeKenyaPhone,

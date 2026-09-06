@@ -42,6 +42,7 @@ const {
   ensureRenewalsTables,
   seedRenewalsIfEmpty,
   registerRenewalRoutes,
+  loadTililFromDb,
   POLICY_SNAPSHOT_COLUMNS,
   FINANCIER_SNAPSHOT_COLUMNS,
   LOG_SNAPSHOT_COLUMNS,
@@ -2824,6 +2825,7 @@ async function initDatabase() {
       await seedOptionalData();
     }
     await loadSmtpFromDb(pool);
+    await loadTililFromDb(pool);
   } catch (error) {
     const canFallbackLocally =
       !IS_VERCEL && dbMode === "postgres" && isPostgresUnreachable(error);
@@ -2843,6 +2845,7 @@ async function initDatabase() {
     await maybeLoadInMemorySnapshot();
     await seedOptionalData();
     await loadSmtpFromDb(pool);
+    await loadTililFromDb(pool);
   }
 }
 

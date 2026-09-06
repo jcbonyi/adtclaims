@@ -221,7 +221,7 @@ Configure in `backend/.env`:
 
 - **Email:** `SMTP_*` plus `RENEWAL_OPS_EMAIL_LIST` (daily failure digest; also editable in Renewals → Settings)
 - **Claims ops email:** `CLAIMS_OPS_EMAIL_LIST` (daily digest and status alerts; also editable in Claims → Notifications). Falls back to `MANAGEMENT_EMAIL_LIST`.
-- **SMS:** Tilil Technologies — `TILIL_API_KEY`, `TILIL_SHORTCODE` (sender ID), optional `TILIL_SERVICE_ID` (default `0`). Endpoint `https://api.tililtech.com/sms/v3/sendsms` (override with `TILIL_SMS_URL`).
+- **SMS:** Tilil Technologies — set `TILIL_API_KEY`, `TILIL_SHORTCODE` (sender ID), optional `TILIL_SERVICE_ID` (default `0`) on the **Vercel backend** service (laptop `.env` is not used in production). You can also paste the Tilil API key under **Renewals → Settings** (stored in the database). Endpoint `https://api.tililtech.com/sms/v3/sendsms`. Client reminders are SMS-only by default; WhatsApp/email are optional.
 - **WhatsApp:** `AFRICASTALKING_WHATSAPP_FROM` (AT) or `WHATSAPP_PHONE_ID` + `WHATSAPP_TOKEN` (Meta Cloud API). Enable the channel in Renewals → Settings.
 - **Inbound SMS / DLR:** point Africa's Talking callbacks to `POST /api/renewals/webhooks/africastalking` and `POST /api/renewals/webhooks/dlr`. Optional `RENEWAL_WEBHOOK_SECRET`.
 - The reminder job runs daily at **08:00 EAT**, only during quiet hours (default 08:00–18:00). Admins can also run it from Renewals → Settings (force overrides quiet hours).
