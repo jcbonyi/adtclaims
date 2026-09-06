@@ -27,8 +27,13 @@ function apiErrorMessage(error, fallback) {
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("claims_token") || "");
   const [user, setUser] = useState(() => {
-    const raw = localStorage.getItem("claims_user");
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = localStorage.getItem("claims_user");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      localStorage.removeItem("claims_user");
+      return null;
+    }
   });
   const [loading, setLoading] = useState(false);
 

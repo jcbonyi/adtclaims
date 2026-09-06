@@ -41,6 +41,7 @@ function KpiCard({ label, value, onClick, isActive }) {
 }
 
 function FollowUpPanel({ title, rows, onRemark }) {
+  const list = Array.isArray(rows) ? rows : [];
   return (
     <div className="rounded-xl bg-white p-4 shadow-sm">
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">{title}</h3>
@@ -57,7 +58,7 @@ function FollowUpPanel({ title, rows, onRemark }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {list.map((row) => (
               <tr key={row.id} className="border-t">
                 <td className="px-2 py-1">{row.insurer}</td>
                 <td className="px-2 py-1">{row.insured_name}</td>
@@ -75,7 +76,7 @@ function FollowUpPanel({ title, rows, onRemark }) {
                 </td>
               </tr>
             ))}
-            {rows.length === 0 ? (
+            {list.length === 0 ? (
               <tr>
                 <td className="px-2 py-2 text-xs text-slate-500" colSpan={6}>
                   No records in this panel.
@@ -86,6 +87,12 @@ function FollowUpPanel({ title, rows, onRemark }) {
         </table>
       </div>
     </div>
+  );
+}
+
+function ChartEmpty({ label = "No data to chart yet." }) {
+  return (
+    <div className="flex h-full min-h-48 items-center justify-center text-sm text-slate-500">{label}</div>
   );
 }
 
@@ -180,8 +187,12 @@ export default function DashboardPage() {
     if (!selectedInsurer) return;
     let ignore = false;
     async function refreshInsurer() {
-      const res = await client.get("/dashboard/insurer", { params: { insurer: selectedInsurer } });
-      if (!ignore) setInsurerData(res.data);
+      try {
+        const res = await client.get("/dashboard/insurer", { params: { insurer: selectedInsurer } });
+        if (!ignore) setInsurerData(res.data);
+      } catch {
+        if (!ignore) setInsurerData(null);
+      }
     }
     refreshInsurer();
     return () => {
@@ -225,7 +236,19 @@ export default function DashboardPage() {
     loadKpiClaimsTable(next, 1);
   }
 
-  const agingRows = useMemo(() => overall?.agingBreakdown || [], [overall]);
+  const agingRows = useMemo(
+    () => (Array.isArray(overall?.agingBreakdown) ? overall.agingBreakdown : []),
+    [overall]
+  );
+  const statusBreakdown = useMemo(
+    () => (Array.isArray(overall?.statusBreakdown) ? overall.statusBreakdown : []),
+    [overall]
+  );
+  const insurerBreakdown = useMemo(
+    () => (Array.isArray(overall?.insurerBreakdown) ? overall.insurerBreakdown : []),
+    [overall]
+  );
+  const kpis = overall?.kpis || {};
 
   if (loading) {
     return (
@@ -274,18 +297,18 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <KpiCard
           label="Total Open Claims"
-          value={overall.kpis.total_open}
+          value={kpis.total_open}
           onClick={() => toggleLifecycleFilter("open")}
           isActive={lifecycleFilter === "open"}
         />
         <KpiCard
           label="Total Closed Claims"
-          value={overall.kpis.total_closed}
+          value={kpis.total_closed}
           onClick={() => toggleLifecycleFilter("closed")}
           isActive={lifecycleFilter === "closed"}
         />
-        <KpiCard label="Avg Days Open" value={overall.kpis.avg_days_open} />
-        <KpiCard label="Claims Over 30 Days" value={overall.kpis.over_30} />
+        <KpiCard label="Avg Days Open" value={kpis.avg_days_open} />
+        <KpiCard label="Claims Over 30 Days" value={kpis.over_30} />
       </div>
 
       {lifecycleFilter ? (
@@ -377,31 +400,39 @@ export default function DashboardPage() {
         <div className="rounded-xl bg-white p-4 shadow-sm">
           <h3 className="mb-2 text-base font-semibold text-slate-900">Claims by Status</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={overall.statusBreakdown} dataKey="value" nameKey="label" outerRadius={100}>
-                  {overall.statusBreakdown.map((entry, index) => (
-                    <Cell key={entry.label} fill={chartColors[index % chartColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {statusBreakdown.length === 0 ? (
+              <ChartEmpty />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={statusBreakdown} dataKey="value" nameKey="label" outerRadius={100}>
+                    {statusBreakdown.map((entry, index) => (
+                      <Cell key={entry.label} fill={chartColors[index % chartColors.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
         <div className="rounded-xl bg-white p-4 shadow-sm lg:col-span-2">
           <h3 className="mb-2 text-base font-semibold text-slate-900">Claims by Insurer</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={overall.insurerBreakdown}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#2563eb" />
-              </BarChart>
-            </ResponsiveContainer>
+            {insurerBreakdown.length === 0 ? (
+              <ChartEmpty />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={insurerBreakdown}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#2563eb" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>
@@ -410,15 +441,19 @@ export default function DashboardPage() {
         <div className="rounded-xl bg-white p-4 shadow-sm lg:col-span-2">
           <h3 className="mb-2 text-base font-semibold text-slate-900">Aging Analysis</h3>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={agingRows}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="bucket" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#f97316" />
-              </BarChart>
-            </ResponsiveContainer>
+            {agingRows.length === 0 ? (
+              <ChartEmpty />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={agingRows}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="bucket" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#f97316" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -464,9 +499,9 @@ export default function DashboardPage() {
         </div>
         {insurerData ? (
           <div className="grid gap-4 lg:grid-cols-3">
-            <KpiCard label="Open" value={insurerData.kpis.open} />
-            <KpiCard label="Closed" value={insurerData.kpis.closed} />
-            <KpiCard label="Avg Turnaround" value={insurerData.kpis.avg_turnaround} />
+            <KpiCard label="Open" value={insurerData.kpis?.open} />
+            <KpiCard label="Closed" value={insurerData.kpis?.closed} />
+            <KpiCard label="Avg Turnaround" value={insurerData.kpis?.avg_turnaround} />
           </div>
         ) : null}
       </div>
@@ -485,7 +520,7 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {insurerData.worstOpenClaims.map((claim) => (
+                {(insurerData.worstOpenClaims || []).map((claim) => (
                   <tr key={claim.id} className="border-t">
                     <td className="py-2">{claim.insured_name}</td>
                     <td className="py-2">{claim.registration_number}</td>
@@ -493,21 +528,32 @@ export default function DashboardPage() {
                     <td className="py-2">{claim.days_open}</td>
                   </tr>
                 ))}
+                {(insurerData.worstOpenClaims || []).length === 0 ? (
+                  <tr>
+                    <td className="py-2 text-slate-500" colSpan={4}>
+                      No open claims for this insurer.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <h3 className="mb-2 text-base font-semibold text-slate-900">Status Breakdown</h3>
             <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={insurerData.statusBreakdown}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#0f766e" />
-                </BarChart>
-              </ResponsiveContainer>
+              {(insurerData.statusBreakdown || []).length === 0 ? (
+                <ChartEmpty />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={insurerData.statusBreakdown}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#0f766e" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>

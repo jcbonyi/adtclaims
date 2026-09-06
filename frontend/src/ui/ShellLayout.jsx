@@ -5,6 +5,7 @@ import { valuationPath } from "../modules/valuationRegister/basePath";
 import { canManageValuers } from "../modules/valuationRegister/constants";
 import { renewalsPath } from "../modules/renewals/basePath";
 import { canManageRenewalSettings } from "../modules/renewals/constants";
+import ErrorBoundary from "./ErrorBoundary";
 
 function navPill({ isActive }) {
   return `adt-nav-pill${isActive ? " adt-nav-pill--active" : ""}`;
@@ -167,7 +168,9 @@ export default function ShellLayout() {
       </header>
 
       <main id="main-content" className="mx-auto max-w-7xl px-4 pb-10 pt-2">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );
