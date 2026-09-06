@@ -16,6 +16,9 @@ function apiErrorMessage(error, fallback) {
   if (!error.response && error.message) {
     return `${fallback} (${error.message}). If this is production, confirm VITE_API_BASE_URL in Vercel is https://your-app.vercel.app/_/backend/api`;
   }
+  if (status === 405) {
+    return `${fallback} (HTTP 405). The login request did not reach the API — usually the frontend is calling /api instead of /_/backend/api. Redeploy after setting VITE_API_BASE_URL=/_/backend/api on the frontend, then hard-refresh.`;
+  }
   if (status === 503) {
     const serverMsg = typeof msg === "string" && msg.trim() ? msg.trim() : "";
     return serverMsg || `${fallback}: API database is not ready. Check DATABASE_URL on the Vercel backend service.`;
