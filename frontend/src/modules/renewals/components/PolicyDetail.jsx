@@ -148,6 +148,9 @@ export function PolicyDetail() {
       if (field === "pipelineStage" && value !== "Extended") {
         next.extensionExpiryDate = "";
       }
+      if (field === "pipelineStage" && value === "Bound") {
+        next.status = "Renewed";
+      }
       return next;
     });
   }
@@ -167,6 +170,7 @@ export function PolicyDetail() {
         setDetail((d) => ({ ...d, policy: updated }));
         setForm((f) => ({
           ...f,
+          renewalDate: toDateInput(updated.renewalDate),
           extensionExpiryDate: toDateInput(updated.extensionExpiryDate),
           pipelineStage: updated.pipelineStage || f.pipelineStage,
           status: updated.status || f.status,
@@ -321,7 +325,7 @@ export function PolicyDetail() {
                 ))}
               </select>
             </FormField>
-            <FormField label="Pipeline" hint="Extended = bound pending full premium (one-month covers)">
+            <FormField label="Pipeline" hint="Bound auto-sets Status to Renewed and rolls the renewal date +12 months">
               <select className="adt-input" value={form.pipelineStage} onChange={(e) => patch("pipelineStage", e.target.value)} disabled={!canEdit}>
                 {PIPELINE_STAGES.map((s) => (
                   <option key={s} value={s}>{s}</option>

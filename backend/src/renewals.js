@@ -664,6 +664,39 @@ function resolveExtensionExpiryDate(pipelineStage, requested, previous = null) {
   return defaultExtensionExpiry();
 }
 
+/**
+ * When pipeline becomes Bound: status → Renewed and roll renewal date +12 months once
+ * (not again while already Bound, unless forceRoll).
+ */
+function boundRenewalPlan({ previousPipeline = null, renewalDate, forceRoll = false } = {}) {
+  const current = toDateOnly(renewalDate);
+  const transitioning = forceRoll || previousPipeline !== "Bound";
+  const nextDate = transitioning && current ? addMonths(current, 12) || current : current;
+  return {
+    status: "Renewed",
+    pipelineStage: "Bound",
+    renewalDate: nextDate,
+    extensionExpiryDate: null,
+    rolled: Boolean(transitioning && current && nextDate && nextDate !== current),
+    previousDate: current,
+  };
+}
+
+async function insertBoundFollowUp(pool, nextSerialId, { policyId, officerId = null, fromDate, toDate }) {
+  if (!nextSerialId || !policyId || !fromDate || !toDate) return;
+  const fid = await nextSerialId(pool, "renewal_follow_ups");
+  await pool.query(
+    `INSERT INTO renewal_follow_ups (id, policy_id, follow_up_date, officer_id, method, outcome, remarks)
+     VALUES ($1,$2,CURRENT_DATE,$3,'Note','Renewed',$4)`,
+    [
+      fid,
+      policyId,
+      officerId || null,
+      `Bound — rolled renewal date from ${fromDate} to ${toDate}`,
+    ]
+  );
+}
+
 async function insertLog(pool, nextSerialId, dbMode, row) {
   const values = [
     row.policy_id,
@@ -1420,10 +1453,24 @@ async function handleInboundSms(pool, { from, text, nextSerialId, onPersist }) {
     await pool.query(`UPDATE renewal_policies SET sms_opt_out = FALSE, updated_at = NOW() WHERE id = $1`, [policy.id]);
   }
   if (parsed.intent === "renewed") {
+    const plan = boundRenewalPlan({
+      previousPipeline: policy.pipeline_stage,
+      renewalDate: policy.renewal_date,
+    });
     await pool.query(
-      `UPDATE renewal_policies SET status = 'Renewed', pipeline_stage = 'Bound', updated_at = NOW() WHERE id = $1`,
-      [policy.id]
+      `UPDATE renewal_policies SET
+         renewal_date = $2, status = $3, pipeline_stage = $4,
+         extension_expiry_date = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [policy.id, plan.renewalDate, plan.status, plan.pipelineStage]
     );
+    if (plan.rolled) {
+      await insertBoundFollowUp(pool, nextSerialId, {
+        policyId: policy.id,
+        fromDate: plan.previousDate,
+        toDate: plan.renewalDate,
+      });
+    }
   }
   const id = await nextSerialId(pool, "renewal_follow_ups");
   await pool.query(
@@ -1856,7 +1903,9 @@ function registerRenewalRoutes(app, deps) {
       if (!req.file) return res.status(400).json({ message: "Missing file" });
       const preview = String(req.query.preview || req.body?.preview || "") === "true";
       const parsed = importRenewalsFromExcelBuffer(req.file.buffer);
-      const existing = await pool.query("SELECT id, insured_name, car_registrations, renewal_date FROM renewal_policies");
+      const existing = await pool.query(
+        "SELECT id, insured_name, car_registrations, renewal_date, pipeline_stage FROM renewal_policies"
+      );
       const byKey = new Map();
       for (const row of existing.rows) {
         byKey.set(
@@ -1950,9 +1999,23 @@ function registerRenewalRoutes(app, deps) {
       let updated = 0;
       for (const item of prepared) {
         const { row, phoneE164, match } = item;
-        const pipelineStage = row.pipelineStage || "Not contacted";
-        const extensionExpiry =
+        let pipelineStage = row.pipelineStage || "Not contacted";
+        let status = "Active";
+        let renewalDate = row.renewalDate;
+        let extensionExpiry =
           pipelineStage === "Extended" ? defaultExtensionExpiry(todayNairobi()) : null;
+
+        if (pipelineStage === "Bound") {
+          const plan = boundRenewalPlan({
+            previousPipeline: match?.pipeline_stage || null,
+            renewalDate: match ? toDateOnly(match.renewal_date) || row.renewalDate : row.renewalDate,
+          });
+          pipelineStage = plan.pipelineStage;
+          status = plan.status;
+          renewalDate = plan.renewalDate;
+          extensionExpiry = null;
+        }
+
         if (match) {
           await pool.query(
             `UPDATE renewal_policies SET
@@ -1963,6 +2026,8 @@ function registerRenewalRoutes(app, deps) {
               premium = COALESCE($9, premium),
               relationship_manager = COALESCE(NULLIF($10, ''), relationship_manager),
               pipeline_stage = COALESCE($11, pipeline_stage),
+              status = CASE WHEN $11 = 'Bound' THEN 'Renewed' ELSE status END,
+              renewal_date = CASE WHEN $11 = 'Bound' THEN $13::date ELSE renewal_date END,
               extension_expiry_date = CASE
                 WHEN $11 = 'Extended' AND extension_expiry_date IS NULL THEN $12::date
                 WHEN $11 IS NOT NULL AND $11 <> 'Extended' THEN NULL
@@ -1981,10 +2046,19 @@ function registerRenewalRoutes(app, deps) {
               row.financialInterest,
               row.premium,
               row.relationshipManager,
-              row.pipelineStage,
+              row.pipelineStage === "Bound" ? "Bound" : row.pipelineStage,
               extensionExpiry,
+              renewalDate,
             ]
           );
+          if (row.pipelineStage === "Bound" && match.pipeline_stage !== "Bound") {
+            await insertBoundFollowUp(pool, nextSerialId, {
+              policyId: match.id,
+              officerId: req.user.id,
+              fromDate: toDateOnly(match.renewal_date),
+              toDate: renewalDate,
+            });
+          }
           updated += 1;
         } else {
           const id = await nextSerialId(pool, "renewal_policies");
@@ -1993,7 +2067,7 @@ function registerRenewalRoutes(app, deps) {
               id, insured_name, phone_raw, phone_e164, email, policy_number, insurer,
               renewal_date, car_registrations, financial_interest, status, premium,
               relationship_manager, pipeline_stage, extension_expiry_date, created_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Active',$11,$12,$13,$14,$15)`,
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
             [
               id,
               row.insuredName,
@@ -2002,9 +2076,10 @@ function registerRenewalRoutes(app, deps) {
               row.email,
               row.policyNumber,
               row.insurer,
-              row.renewalDate,
+              renewalDate,
               row.registrations,
               row.financialInterest,
+              status,
               row.premium,
               row.relationshipManager || "",
               pipelineStage,
@@ -2012,6 +2087,14 @@ function registerRenewalRoutes(app, deps) {
               req.user.id,
             ]
           );
+          if (pipelineStage === "Bound") {
+            await insertBoundFollowUp(pool, nextSerialId, {
+              policyId: id,
+              officerId: req.user.id,
+              fromDate: row.renewalDate,
+              toDate: renewalDate,
+            });
+          }
           inserted += 1;
         }
       }
@@ -2207,7 +2290,18 @@ function registerRenewalRoutes(app, deps) {
     try {
       const body = policyBodySchema.parse(req.body);
       const phoneE164 = normalizeKenyaPhone(body.phoneRaw);
-      const extensionExpiry = resolveExtensionExpiryDate(body.pipelineStage, body.extensionExpiryDate);
+      let status = body.status;
+      let pipelineStage = body.pipelineStage;
+      let renewalDate = body.renewalDate;
+      let extensionExpiry = resolveExtensionExpiryDate(body.pipelineStage, body.extensionExpiryDate);
+      let boundPlan = null;
+      if (pipelineStage === "Bound") {
+        boundPlan = boundRenewalPlan({ previousPipeline: null, renewalDate: body.renewalDate });
+        status = boundPlan.status;
+        pipelineStage = boundPlan.pipelineStage;
+        renewalDate = boundPlan.renewalDate;
+        extensionExpiry = null;
+      }
       const id = await nextSerialId(pool, "renewal_policies");
       const inserted = await pool.query(
         `INSERT INTO renewal_policies (
@@ -2224,12 +2318,12 @@ function registerRenewalRoutes(app, deps) {
           body.email.trim(),
           body.policyNumber.trim(),
           body.insurer.trim(),
-          body.renewalDate,
+          renewalDate,
           body.carRegistrations.trim(),
           body.financialInterest.trim(),
-          body.status,
+          status,
           body.notes.trim(),
-          body.pipelineStage,
+          pipelineStage,
           extensionExpiry,
           body.premium ?? null,
           body.assignedOfficerId || null,
@@ -2238,6 +2332,14 @@ function registerRenewalRoutes(app, deps) {
           req.user.id,
         ]
       );
+      if (boundPlan?.rolled) {
+        await insertBoundFollowUp(pool, nextSerialId, {
+          policyId: id,
+          officerId: req.user.id,
+          fromDate: boundPlan.previousDate,
+          toDate: boundPlan.renewalDate,
+        });
+      }
       await autoCreateFinanciers(pool, nextSerialId, body.financialInterest);
       await onPersist?.();
       return res.status(201).json(rowToPolicy(inserted.rows[0]));
@@ -2253,14 +2355,32 @@ function registerRenewalRoutes(app, deps) {
       const id = Number(req.params.id);
       const body = policyBodySchema.parse(req.body);
       const phoneE164 = normalizeKenyaPhone(body.phoneRaw);
-      const existing = await pool.query("SELECT extension_expiry_date, pipeline_stage FROM renewal_policies WHERE id = $1", [id]);
+      const existing = await pool.query(
+        "SELECT extension_expiry_date, pipeline_stage, renewal_date FROM renewal_policies WHERE id = $1",
+        [id]
+      );
       if (!existing.rows[0]) return res.status(404).json({ message: "Policy not found" });
+      const previousPipeline = existing.rows[0].pipeline_stage;
       const prevExpiry = existing.rows[0].extension_expiry_date;
-      const extensionExpiry = resolveExtensionExpiryDate(
+      let status = body.status;
+      let pipelineStage = body.pipelineStage;
+      let renewalDate = body.renewalDate;
+      let extensionExpiry = resolveExtensionExpiryDate(
         body.pipelineStage,
         body.extensionExpiryDate,
         body.pipelineStage === "Extended" ? prevExpiry : null
       );
+      let boundPlan = null;
+      if (pipelineStage === "Bound") {
+        boundPlan = boundRenewalPlan({
+          previousPipeline,
+          renewalDate: body.renewalDate || existing.rows[0].renewal_date,
+        });
+        status = boundPlan.status;
+        pipelineStage = boundPlan.pipelineStage;
+        renewalDate = boundPlan.renewalDate;
+        extensionExpiry = null;
+      }
       const updated = await pool.query(
         `UPDATE renewal_policies SET
           insured_name = $2, phone_raw = $3, phone_e164 = $4, email = $5, policy_number = $6,
@@ -2276,12 +2396,12 @@ function registerRenewalRoutes(app, deps) {
           body.email.trim(),
           body.policyNumber.trim(),
           body.insurer.trim(),
-          body.renewalDate,
+          renewalDate,
           body.carRegistrations.trim(),
           body.financialInterest.trim(),
-          body.status,
+          status,
           body.notes.trim(),
-          body.pipelineStage,
+          pipelineStage,
           extensionExpiry,
           body.premium ?? null,
           body.assignedOfficerId || null,
@@ -2290,6 +2410,14 @@ function registerRenewalRoutes(app, deps) {
         ]
       );
       if (!updated.rows[0]) return res.status(404).json({ message: "Policy not found" });
+      if (boundPlan?.rolled) {
+        await insertBoundFollowUp(pool, nextSerialId, {
+          policyId: id,
+          officerId: req.user.id,
+          fromDate: boundPlan.previousDate,
+          toDate: boundPlan.renewalDate,
+        });
+      }
       await autoCreateFinanciers(pool, nextSerialId, body.financialInterest);
       await onPersist?.();
       return res.json(rowToPolicy(updated.rows[0]));
@@ -2319,22 +2447,25 @@ function registerRenewalRoutes(app, deps) {
       const id = Number(req.params.id);
       const existing = await pool.query("SELECT * FROM renewal_policies WHERE id = $1", [id]);
       if (!existing.rows[0]) return res.status(404).json({ message: "Policy not found" });
-      const current = toDateOnly(existing.rows[0].renewal_date);
-      const nextDate = addMonths(current, 12);
-      if (!nextDate) return res.status(400).json({ message: "Could not roll renewal date" });
+      const plan = boundRenewalPlan({
+        previousPipeline: existing.rows[0].pipeline_stage,
+        renewalDate: existing.rows[0].renewal_date,
+        forceRoll: true,
+      });
+      if (!plan.renewalDate) return res.status(400).json({ message: "Could not roll renewal date" });
       const updated = await pool.query(
         `UPDATE renewal_policies SET
-          renewal_date = $2, status = 'Renewed', pipeline_stage = 'Bound',
+          renewal_date = $2, status = $3, pipeline_stage = $4,
           extension_expiry_date = NULL, updated_at = NOW()
          WHERE id = $1 RETURNING *`,
-        [id, nextDate]
+        [id, plan.renewalDate, plan.status, plan.pipelineStage]
       );
-      const fid = await nextSerialId(pool, "renewal_follow_ups");
-      await pool.query(
-        `INSERT INTO renewal_follow_ups (id, policy_id, follow_up_date, officer_id, method, outcome, remarks)
-         VALUES ($1,$2,CURRENT_DATE,$3,'Note','Renewed', $4)`,
-        [fid, id, req.user.id, `Rolled renewal date from ${current} to ${nextDate}`]
-      );
+      await insertBoundFollowUp(pool, nextSerialId, {
+        policyId: id,
+        officerId: req.user.id,
+        fromDate: plan.previousDate,
+        toDate: plan.renewalDate,
+      });
       await onPersist?.();
       return res.json(rowToPolicy(updated.rows[0]));
     } catch (err) {
