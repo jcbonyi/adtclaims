@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchNotifications } from "../api/renewalsApi";
+import { formatMilestoneLabel } from "../constants";
 import { LogStatusBadge } from "./StatusBadge";
 import { Button, Card, EmptyState, FilterBar, LoadingState, PageHeader } from "./ui";
 
@@ -71,7 +72,7 @@ export function NotificationLog() {
                 <tr>
                   <th>When</th>
                   <th>Insured</th>
-                  <th>T-</th>
+                  <th>Milestone</th>
                   <th>Channel</th>
                   <th>Recipient</th>
                   <th>Status</th>
@@ -83,7 +84,7 @@ export function NotificationLog() {
                   <tr key={row.id}>
                     <td>{row.createdAt ? new Date(row.createdAt).toLocaleString() : "—"}</td>
                     <td>{row.insuredName}</td>
-                    <td>{row.milestone}</td>
+                    <td>{formatMilestoneLabel(row.milestone)}</td>
                     <td className="rn-channel">{row.channel}</td>
                     <td>
                       {row.recipientType}: {row.recipientAddress || "—"}

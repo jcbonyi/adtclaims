@@ -78,7 +78,7 @@ export function Sidebar({ failureCount = 0 }) {
         </div>
         <div className="adt-sidebar-app-name">Renewals</div>
         <div style={{ fontSize: 12, color: "var(--adt-muted)", marginTop: 4 }}>
-          T-60 · T-30 · T-15 · T-7 · T-1
+          T-60 · T-30 · T-15 · T-7 · T-1 · Extended weekly
         </div>
       </div>
       <nav className="adt-sidebar-nav" aria-label="Renewals navigation">

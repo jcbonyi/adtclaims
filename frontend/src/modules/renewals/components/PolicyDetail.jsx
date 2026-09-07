@@ -19,6 +19,7 @@ import {
   daysUntilTone,
   FOLLOW_UP_METHODS,
   formatKes,
+  formatMilestoneLabel,
   PIPELINE_STAGES,
   POLICY_STATUSES,
 } from "../constants";
@@ -33,6 +34,7 @@ const emptyForm = {
   policyNumber: "",
   insurer: "",
   renewalDate: "",
+  extensionExpiryDate: "",
   carRegistrations: "",
   financialInterest: "",
   status: "Active",
@@ -50,9 +52,28 @@ function toDateInput(value) {
   return m ? m[1] : "";
 }
 
+function addOneMonthIso(isoDate) {
+  if (!isoDate) return "";
+  const m = String(isoDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const target = new Date(Date.UTC(year, month - 1 + 1, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  const safeDay = Math.min(day, lastDay);
+  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function todayIsoLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function policyPayload(form) {
   return {
     ...form,
+    extensionExpiryDate: form.pipelineStage === "Extended" ? form.extensionExpiryDate || null : null,
     premium: form.premium === "" || form.premium == null ? null : Number(form.premium),
     assignedOfficerId: form.assignedOfficerId ? Number(form.assignedOfficerId) : null,
     smsOptOut: !!form.smsOptOut,
@@ -86,6 +107,7 @@ export function PolicyDetail() {
       policyNumber: p.policyNumber || "",
       insurer: p.insurer || "",
       renewalDate: toDateInput(p.renewalDate),
+      extensionExpiryDate: toDateInput(p.extensionExpiryDate),
       carRegistrations: p.carRegistrations || "",
       financialInterest: p.financialInterest || "",
       status: p.status || "Active",
@@ -118,7 +140,16 @@ export function PolicyDetail() {
   }, [id, isNew]);
 
   function patch(field, value) {
-    setForm((f) => ({ ...f, [field]: value }));
+    setForm((f) => {
+      const next = { ...f, [field]: value };
+      if (field === "pipelineStage" && value === "Extended" && !f.extensionExpiryDate) {
+        next.extensionExpiryDate = addOneMonthIso(todayIsoLocal());
+      }
+      if (field === "pipelineStage" && value !== "Extended") {
+        next.extensionExpiryDate = "";
+      }
+      return next;
+    });
   }
 
   async function handleSave(event) {
@@ -134,6 +165,12 @@ export function PolicyDetail() {
       } else {
         const updated = await updateRenewal(id, payload);
         setDetail((d) => ({ ...d, policy: updated }));
+        setForm((f) => ({
+          ...f,
+          extensionExpiryDate: toDateInput(updated.extensionExpiryDate),
+          pipelineStage: updated.pipelineStage || f.pipelineStage,
+          status: updated.status || f.status,
+        }));
       }
     } catch (err) {
       setError(err.response?.data?.message || "Save failed");
@@ -159,6 +196,7 @@ export function PolicyDetail() {
       setForm((f) => ({
         ...f,
         renewalDate: toDateInput(updated.renewalDate),
+        extensionExpiryDate: "",
         status: updated.status,
         pipelineStage: updated.pipelineStage,
       }));
@@ -248,8 +286,21 @@ export function PolicyDetail() {
             <FormField label="Email">
               <input className="adt-input" type="email" value={form.email} onChange={(e) => patch("email", e.target.value)} disabled={!canEdit} />
             </FormField>
-            <FormField label="Policy renewal date" required>
+            <FormField label="Policy renewal date" required hint="Annual renewal date — unchanged when Extended">
               <input className="adt-input" type="date" value={form.renewalDate} onChange={(e) => patch("renewalDate", e.target.value)} required disabled={!canEdit} />
+            </FormField>
+            <FormField
+              label="Extension cover expiry"
+              hint="One-month cover end. Required for Extended — weekly SMS from this date until pipeline changes."
+            >
+              <input
+                className="adt-input"
+                type="date"
+                value={form.extensionExpiryDate}
+                onChange={(e) => patch("extensionExpiryDate", e.target.value)}
+                disabled={!canEdit || form.pipelineStage !== "Extended"}
+                required={form.pipelineStage === "Extended"}
+              />
             </FormField>
             <FormField label="Car registration details" hint='Multiple regs separated by "&"'>
               <input className="adt-input" value={form.carRegistrations} onChange={(e) => patch("carRegistrations", e.target.value)} placeholder="KBJ 139Q & KCA 001A" disabled={!canEdit} />
@@ -270,7 +321,7 @@ export function PolicyDetail() {
                 ))}
               </select>
             </FormField>
-            <FormField label="Pipeline">
+            <FormField label="Pipeline" hint="Extended = bound pending full premium (one-month covers)">
               <select className="adt-input" value={form.pipelineStage} onChange={(e) => patch("pipelineStage", e.target.value)} disabled={!canEdit}>
                 {PIPELINE_STAGES.map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -430,7 +481,7 @@ export function PolicyDetail() {
                     {detail.notifications.map((n) => (
                       <tr key={n.id}>
                         <td>{n.createdAt ? new Date(n.createdAt).toLocaleString() : "—"}</td>
-                        <td>T-{n.milestone}</td>
+                        <td>{formatMilestoneLabel(n.milestone)}</td>
                         <td className="rn-channel">{n.channel}</td>
                         <td>{n.recipientType}: {n.recipientAddress || n.recipientName || "—"}</td>
                         <td><LogStatusBadge status={n.status} /></td>
@@ -442,7 +493,7 @@ export function PolicyDetail() {
                 </table>
               </div>
             ) : (
-              <p className="rn-muted">No send attempts yet. The daily job notifies at T-60, T-30, T-15, T-7, and T-1.</p>
+              <p className="rn-muted">No send attempts yet. Standard milestones are T-60, T-30, T-15, T-7, and T-1. Extended policies get weekly SMS from the one-month cover expiry date.</p>
             )}
           </Card>
         </>

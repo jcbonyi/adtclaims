@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fetchRenewalsDashboard } from "../api/renewalsApi";
 import { renewalsPath } from "../basePath";
-import { daysUntilLabel, daysUntilTone, KPI_FILTER_LABELS } from "../constants";
+import { daysUntilLabel, daysUntilTone, formatMilestoneLabel, KPI_FILTER_LABELS } from "../constants";
 import { formatDisplayDate } from "../../valuationRegister/utils/format";
 import { StatusBadge } from "./StatusBadge";
 import { AlertBanner, Button, Card, EmptyState, KpiCard, KpiRow, LoadingState, PageHeader } from "./ui";
@@ -67,6 +67,7 @@ export function Dashboard({ onOpenPolicy }) {
 
       <KpiRow>
         <KpiCard label="Active policies" value={kpis.total_active} onClick={() => navigate(renewalsPath("register"))} />
+        <KpiCard label="Due today" value={kpis.due_today ?? 0} onClick={() => navigate(renewalsPath("register?window=today"))} />
         <KpiCard label="Due 31–60 days" value={kpis.t60} onClick={() => navigate(renewalsPath("register?window=t60"))} />
         <KpiCard label="Due 16–30 days" value={kpis.t30} onClick={() => navigate(renewalsPath("register?window=t30"))} />
         <KpiCard label="Due 0–15 days" value={kpis.t15} onClick={() => navigate(renewalsPath("register?window=t15"))} />
@@ -74,6 +75,7 @@ export function Dashboard({ onOpenPolicy }) {
         <KpiCard label="Overdue" value={kpis.overdue} onClick={() => navigate(renewalsPath("register?window=overdue"))} />
         <KpiCard label="Quoted" value={kpis.quoted ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Quoted")}`))} />
         <KpiCard label="Awaiting payment" value={kpis.awaiting_payment ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Awaiting payment")}`))} />
+        <KpiCard label="Extensions" value={kpis.extended ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Extended")}`))} />
         <KpiCard label="Bound" value={kpis.bound ?? 0} onClick={() => navigate(renewalsPath(`register?pipeline=${encodeURIComponent("Bound")}`))} />
         <KpiCard label="Premium at risk" value={kpis.premium_at_risk ? `KES ${Number(kpis.premium_at_risk).toLocaleString()}` : "—"} />
         <KpiCard
@@ -218,7 +220,7 @@ export function Dashboard({ onOpenPolicy }) {
                 {failures.slice(0, 8).map((row) => (
                   <tr key={row.id}>
                     <td>{row.insuredName}</td>
-                    <td>T-{row.milestone}</td>
+                    <td>{formatMilestoneLabel(row.milestone)}</td>
                     <td className="rn-channel">{row.channel}</td>
                     <td>
                       {row.recipientType}: {row.recipientAddress || "none"}

@@ -19,6 +19,7 @@ function policyToExportRow(p) {
     Contacts: p.phoneRaw || "",
     Email: p.email || "",
     "Policy Renewal": formatDateForExport(p.renewalDate),
+    "Extension Cover Expiry": formatDateForExport(p.extensionExpiryDate),
     "Car Registration Details": p.carRegistrations || "",
     "Financial Interest": p.financialInterest || "",
     Insurer: p.insurer || "",

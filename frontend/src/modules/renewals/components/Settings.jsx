@@ -258,7 +258,7 @@ export function Settings() {
       <Card>
         <h3 className="adt-card-header">Run reminder job</h3>
         <p className="rn-muted">
-          Automatic run is at 08:00 EAT, only during quiet hours (default 08:00–18:00). Active policies due in exactly 60, 30, 15, 7, or 1 days are notified. Bound/Lost pipeline stages are skipped.
+          Automatic run is at 08:00 EAT, only during quiet hours (default 08:00–18:00). Active policies due in exactly 60, 30, 15, 7, or 1 days are notified. <strong>Extended</strong> (bound, premium outstanding — one-month covers) get weekly client SMS from the <em>extension cover expiry</em> until the pipeline changes. Annual renewal date is unchanged. Bound/Lost are skipped.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button tone="accent" onClick={() => handleRun(false)} disabled={busy}>

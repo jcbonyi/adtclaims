@@ -46,6 +46,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
     return policies.filter((p) => {
       if (filters.status && p.status !== filters.status) return false;
       if (filters.pipeline && p.pipelineStage !== filters.pipeline) return false;
+      if (windowFilter === "today" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal === 0)) return false;
       if (windowFilter === "t60" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 30 && p.daysUntilRenewal <= 60)) return false;
       if (windowFilter === "t30" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 15 && p.daysUntilRenewal <= 30)) return false;
       if (windowFilter === "t15" && !(p.status === "Active" && isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal >= 0 && p.daysUntilRenewal <= 15)) return false;
@@ -271,6 +272,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
                   <th>Insured</th>
                   <th>Vehicles</th>
                   <th>Renewal</th>
+                  <th>Ext. expiry</th>
                   <th>Countdown</th>
                   <th>Phone</th>
                   <th>Financier</th>
@@ -289,6 +291,7 @@ export function Register({ policies, onView, onCreate, onReload }) {
                     <td className="val-insured-cell">{row.insuredName}</td>
                     <td>{row.carRegistrations || "—"}</td>
                     <td>{formatDisplayDate(row.renewalDate)}</td>
+                    <td>{row.pipelineStage === "Extended" ? formatDisplayDate(row.extensionExpiryDate) || "—" : "—"}</td>
                     <td>
                       <span className={`rn-days rn-days--${daysUntilTone(row.daysUntilRenewal)}`}>
                         {daysUntilLabel(row.daysUntilRenewal)}

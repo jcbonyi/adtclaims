@@ -10,7 +10,7 @@ Full-stack web application for managing insurance claims across insurers and cla
 
 ## Core Features Implemented
 
-- **Policy Renewals** module (`/renewals`) — Excel ingest (upsert + preview), T-60/30/15/7/1 SMS + email + WhatsApp, pipeline/RM ownership, financier auto-create, inbound STOP/RENEWED, attachments, client 360, monthly production report
+- **Policy Renewals** module (`/renewals`) — Excel ingest (upsert + preview), T-60/30/15/7/1 SMS + email + WhatsApp, **Extended** pipeline (weekly client SMS from renewal date), pipeline/RM ownership, financier auto-create, inbound STOP/RENEWED, attachments, client 360, monthly production report
 - **Motor Valuation Tracking** module (`/valuations`) — valuation register, compliance dashboard (2-day overdue rule), follow-up queue, reports, **Excel import/export** (template download, filtered export), CSV export, valuer management, quotation/claims prefill links, email notifications (SMTP optional)
 - Claims register with filters, pagination, sorting, global search, row aging color cues, inline status update, and quick remark add
 - Claim **notifications & automations** (`/claims/notifications`) — email on new claims and high-signal status changes (RA issued, released, closed, pending docs, assessment), aging chases at 8 / 15 / 30+ days (daily ops digest paused)
@@ -206,7 +206,7 @@ Use your own domain (e.g. `claims.example.com` or `example.com`) with the same V
 - `GET /api/claims-export.xlsx` export claims as a styled Excel workbook (ADT branding; same filters as the register)
 - `GET /api/renewals` list renewal policies
 - `POST /api/renewals/import-excel` import the Excel register (phone → +254)
-- `POST /api/renewals/run-reminders` admin: run T-60/T-30/T-15/T-7/T-1 SMS+email+WhatsApp job
+- `POST /api/renewals/run-reminders` admin: run T-60/T-30/T-15/T-7/T-1 plus Extended weekly client reminders
 - `GET /api/renewals/notifications?unacked=true` open delivery failures
 - `GET /api/renewals/dashboard` renewal KPIs and failure alerts
 - `GET /api/renewals/reports/monthly` production report (renewed / lapsed / open)

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { ackNotification, fetchNotifications, retryNotification } from "../api/renewalsApi";
 import { renewalsPath } from "../basePath";
-import { canEditRenewals } from "../constants";
+import { canEditRenewals, formatMilestoneLabel } from "../constants";
 import { LogStatusBadge } from "./StatusBadge";
 import { AlertBanner, Button, Card, EmptyState, LoadingState, PageHeader } from "./ui";
 
@@ -87,7 +87,7 @@ export function Failures({ onChanged }) {
                         {row.insuredName}
                       </button>
                     </td>
-                    <td>T-{row.milestone}</td>
+                    <td>{formatMilestoneLabel(row.milestone)}</td>
                     <td className="rn-channel">{row.channel}</td>
                     <td>
                       {row.recipientType}

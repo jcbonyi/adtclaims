@@ -1,5 +1,5 @@
 export const POLICY_STATUSES = ["Active", "Renewed", "Lapsed", "Cancelled"];
-export const PIPELINE_STAGES = ["Not contacted", "Quoted", "Awaiting payment", "Bound", "Lost"];
+export const PIPELINE_STAGES = ["Not contacted", "Quoted", "Awaiting payment", "Extended", "Bound", "Lost"];
 export const FOLLOW_UP_METHODS = ["Call", "Visit", "Email", "SMS", "WhatsApp", "Note"];
 export const MILESTONES = [60, 30, 15, 7, 1];
 
@@ -14,6 +14,7 @@ export const PIPELINE_STYLES = {
   "Not contacted": { bg: "#F8FAFC", border: "#94A3B8", text: "#334155" },
   Quoted: { bg: "#EFF6FF", border: "#3B82F6", text: "#1D4ED8" },
   "Awaiting payment": { bg: "#FEF3C7", border: "#F59E0B", text: "#B45309" },
+  Extended: { bg: "#F5F3FF", border: "#8B5CF6", text: "#6D28D9" },
   Bound: { bg: "#ECFDF5", border: "#10B981", text: "#047857" },
   Lost: { bg: "#FEE2E2", border: "#EF4444", text: "#B91C1C" },
 };
@@ -39,6 +40,7 @@ export function canManageRenewalSettings(role) {
 }
 
 export const KPI_FILTER_LABELS = {
+  today: "Due today",
   t60: "Due in 31–60 days",
   t30: "Due in 16–30 days",
   t15: "Due in 0–15 days",
@@ -64,6 +66,15 @@ export function daysUntilLabel(days) {
   if (days < 0) return `${Math.abs(days)}d overdue`;
   if (days === 0) return "Due today";
   return `${days}d`;
+}
+
+/** Reminder log milestone: standard T-60… or Extended weekly Ext+0d / Ext+7d… */
+export function formatMilestoneLabel(milestone) {
+  if (milestone == null || milestone === "") return "—";
+  const n = Number(milestone);
+  if (!Number.isFinite(n)) return String(milestone);
+  if (n <= 0) return `Ext+${Math.abs(n)}d`;
+  return `T-${n}`;
 }
 
 export function formatKes(value) {

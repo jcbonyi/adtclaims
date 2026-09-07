@@ -24,9 +24,12 @@ Reply STOP by SMS to opt out of reminders.`;
 const DEFAULT_FINANCIER_SMS =
   "ADT Africa Brokers: Policy for {insuredName} ({registrations}) renews on {renewalDate} ({daysUntil} days). Financial interest: {financierName}. Contact {callbackNumber}.";
 
-const PIPELINE_STAGES = ["Not contacted", "Quoted", "Awaiting payment", "Bound", "Lost"];
+const PIPELINE_STAGES = ["Not contacted", "Quoted", "Awaiting payment", "Extended", "Bound", "Lost"];
 const FOLLOW_UP_METHODS = ["Call", "Visit", "Email", "SMS", "WhatsApp", "Note"];
 const MILESTONES = [60, 30, 15, 7, 1];
+
+const DEFAULT_EXTENDED_SMS =
+  "Dear {insuredName}, your ADT one-month cover for {registrations} expires on {extensionExpiry} ({daysPast} days past cover expiry). Annual renewal date remains {renewalDate}. Please settle the outstanding premium — call {callbackNumber}. Reply STOP to opt out.";
 
 function formatDisplayDate(iso) {
   if (!iso) return "—";
@@ -49,7 +52,9 @@ function templateVars(ctx) {
     insuredName: ctx.insuredName || "",
     registrations: ctx.registrations || "your vehicle(s)",
     renewalDate: formatDisplayDate(ctx.renewalDate),
+    extensionExpiry: formatDisplayDate(ctx.extensionExpiry),
     daysUntil: ctx.daysUntil ?? "",
+    daysPast: ctx.daysPast ?? "",
     insurer: ctx.insurer || "—",
     policyNumber: ctx.policyNumber || "—",
     financierName: ctx.financierName || "",
@@ -237,6 +242,7 @@ module.exports = {
   DEFAULT_EMAIL_SUBJECT,
   DEFAULT_EMAIL_BODY,
   DEFAULT_FINANCIER_SMS,
+  DEFAULT_EXTENDED_SMS,
   PIPELINE_STAGES,
   FOLLOW_UP_METHODS,
   MILESTONES,

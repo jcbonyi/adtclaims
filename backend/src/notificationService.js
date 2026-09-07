@@ -534,14 +534,21 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
 
   const successLines = successes.slice(0, 100).map((s) => {
     const name = s.insuredName || s.recipientName || "—";
-    const milestone = s.milestone != null ? `T-${s.milestone}` : "—";
+    const milestone =
+      s.extended || (typeof s.milestone === "number" && s.milestone <= 0)
+        ? `Ext+${Math.max(0, -(Number(s.milestone) || 0))}d`
+        : `T-${s.milestone}`;
     const channel = String(s.channel || "").toUpperCase() || "—";
     const who = `${s.recipientType || "recipient"} ${s.recipientAddress || "(no address)"}`;
     return `• ${name} | ${milestone} | ${channel} → ${who}`;
   });
 
   const failureLines = failures.slice(0, 80).map((f) => {
-    return `• ${f.insuredName} | T-${f.milestone} | ${String(f.channel || "").toUpperCase()} → ${f.recipientType} ${f.recipientAddress || "(no address)"} | ${f.errorMessage || f.status}`;
+    const milestone =
+      typeof f.milestone === "number" && f.milestone <= 0
+        ? `Ext+${Math.max(0, -f.milestone)}d`
+        : `T-${f.milestone}`;
+    return `• ${f.insuredName} | ${milestone} | ${String(f.channel || "").toUpperCase()} → ${f.recipientType} ${f.recipientAddress || "(no address)"} | ${f.errorMessage || f.status}`;
   });
 
   const text = [
@@ -568,9 +575,13 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
     .slice(0, 100)
     .map((s) => {
       const name = s.insuredName || s.recipientName || "—";
+      const milestone =
+        s.extended || (typeof s.milestone === "number" && s.milestone <= 0)
+          ? `Ext+${Math.max(0, -(Number(s.milestone) || 0))}d`
+          : `T-${s.milestone ?? "—"}`;
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${name}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">T-${s.milestone ?? "—"}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${milestone}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${String(s.channel || "").toUpperCase()}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${s.recipientType || ""} ${s.recipientAddress || ""}</td>
       </tr>`;
@@ -580,9 +591,13 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
   const htmlFailRows = failures
     .slice(0, 80)
     .map((f) => {
+      const milestone =
+        typeof f.milestone === "number" && f.milestone <= 0
+          ? `Ext+${Math.max(0, -f.milestone)}d`
+          : `T-${f.milestone ?? "—"}`;
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${f.insuredName || "—"}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">T-${f.milestone ?? "—"}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${milestone}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${String(f.channel || "").toUpperCase()}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${f.recipientType || ""} ${f.recipientAddress || ""}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;color:#b91c1c">${f.errorMessage || f.status || ""}</td>

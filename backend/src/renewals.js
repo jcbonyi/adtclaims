@@ -29,6 +29,7 @@ const {
   DEFAULT_EMAIL_SUBJECT,
   DEFAULT_EMAIL_BODY,
   DEFAULT_FINANCIER_SMS,
+  DEFAULT_EXTENDED_SMS,
   PIPELINE_STAGES,
   FOLLOW_UP_METHODS,
   MILESTONES,
@@ -60,6 +61,7 @@ const POLICY_SNAPSHOT_COLUMNS = [
   "status",
   "notes",
   "pipeline_stage",
+  "extension_expiry_date",
   "premium",
   "assigned_officer_id",
   "relationship_manager",
@@ -155,6 +157,7 @@ const policyBodySchema = z.object({
   status: z.enum(POLICY_STATUSES).optional().default("Active"),
   notes: z.string().optional().default(""),
   pipelineStage: z.enum(PIPELINE_STAGES).optional().default("Not contacted"),
+  extensionExpiryDate: z.string().nullable().optional(),
   premium: z.number().nullable().optional(),
   assignedOfficerId: z.number().nullable().optional(),
   relationshipManager: z.string().optional().default(""),
@@ -244,6 +247,8 @@ function splitRegistrations(raw) {
 
 function rowToPolicy(row, today = todayNairobi()) {
   const days = daysUntilRenewal(row.renewal_date, today);
+  const extensionExpiry = toDateOnly(row.extension_expiry_date);
+  const daysUntilExtension = extensionExpiry ? daysUntilRenewal(extensionExpiry, today) : null;
   return {
     id: row.id,
     insuredName: row.insured_name,
@@ -253,6 +258,8 @@ function rowToPolicy(row, today = todayNairobi()) {
     policyNumber: row.policy_number || "",
     insurer: row.insurer || "",
     renewalDate: toDateOnly(row.renewal_date),
+    extensionExpiryDate: extensionExpiry,
+    daysUntilExtension,
     carRegistrations: row.car_registrations || "",
     vehicles: splitRegistrations(row.car_registrations),
     financialInterest: row.financial_interest || "",
@@ -386,6 +393,7 @@ async function ensureRenewalsTables(pool) {
   await pool.query(`ALTER TABLE renewal_policies ADD COLUMN IF NOT EXISTS assigned_officer_id INTEGER NULL;`);
   await pool.query(`ALTER TABLE renewal_policies ADD COLUMN IF NOT EXISTS relationship_manager TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE renewal_policies ADD COLUMN IF NOT EXISTS sms_opt_out BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE renewal_policies ADD COLUMN IF NOT EXISTS extension_expiry_date DATE NULL;`);
   await pool.query(`ALTER TABLE renewal_notification_logs ADD COLUMN IF NOT EXISTS delivery_status TEXT NULL;`);
   await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE renewal_settings ADD COLUMN IF NOT EXISTS sms_template TEXT NOT NULL DEFAULT '';`);
@@ -629,15 +637,31 @@ async function autoCreateFinanciers(pool, nextSerialId, financialInterest) {
   }
 }
 
-async function alreadySent(pool, { policyId, milestone, channel, recipientType, recipientAddress }) {
-  const result = await pool.query(
-    `SELECT id FROM renewal_notification_logs
+async function alreadySent(pool, { policyId, milestone, channel, recipientType, recipientAddress, messageContains }) {
+  const params = [policyId, milestone, channel, recipientType, recipientAddress || ""];
+  let sql = `SELECT id FROM renewal_notification_logs
      WHERE policy_id = $1 AND milestone = $2 AND channel = $3
-       AND recipient_type = $4 AND recipient_address = $5 AND status = 'sent'
-     LIMIT 1`,
-    [policyId, milestone, channel, recipientType, recipientAddress || ""]
-  );
+       AND recipient_type = $4 AND recipient_address = $5 AND status = 'sent'`;
+  if (messageContains) {
+    params.push(`%${messageContains}%`);
+    sql += ` AND message_body LIKE $${params.length}`;
+  }
+  sql += ` LIMIT 1`;
+  const result = await pool.query(sql, params);
   return !!result.rows[0];
+}
+
+/** Default one-month cover end when moving into Extended. */
+function defaultExtensionExpiry(fromDate = todayNairobi()) {
+  return addMonths(toDateOnly(fromDate) || todayNairobi(), 1);
+}
+
+function resolveExtensionExpiryDate(pipelineStage, requested, previous = null) {
+  if (pipelineStage !== "Extended") return requested ? toDateOnly(requested) : null;
+  const explicit = requested ? toDateOnly(requested) : null;
+  if (explicit) return explicit;
+  if (previous) return toDateOnly(previous);
+  return defaultExtensionExpiry();
 }
 
 async function insertLog(pool, nextSerialId, dbMode, row) {
@@ -833,6 +857,149 @@ async function deliverAttempt(attempt, settings) {
   }
 }
 
+function buildAttemptsForExtendedPolicy(policy, settings) {
+  const extensionExpiry = toDateOnly(policy.extension_expiry_date);
+  const daysUntilExt =
+    policy.daysUntilExtension != null
+      ? policy.daysUntilExtension
+      : extensionExpiry
+        ? daysUntilRenewal(extensionExpiry)
+        : null;
+  const daysPast = Math.max(0, -(Number(daysUntilExt) || 0));
+  const attempts = [];
+  const vars = templateVars({
+    insuredName: policy.insured_name,
+    registrations: policy.car_registrations,
+    renewalDate: policy.renewal_date,
+    extensionExpiry,
+    daysUntil: daysUntilExt,
+    daysPast,
+    phone: policy.phone_e164 || policy.phone_raw,
+    insurer: policy.insurer,
+    policyNumber: policy.policy_number,
+    callbackNumber: settings.callback_number,
+  });
+  const optedOut = !!policy.sms_opt_out;
+
+  if (settings.sms_enabled) {
+    attempts.push({
+      channel: "sms",
+      recipientType: "client",
+      recipientName: policy.insured_name,
+      recipientAddress: policy.phone_e164 || "",
+      message: applyTemplate(DEFAULT_EXTENDED_SMS, vars),
+      missingReason: optedOut
+        ? "Client opted out of SMS"
+        : policy.phone_e164
+          ? null
+          : "Client phone missing or could not be normalized to +254",
+    });
+  }
+  if (settings.whatsapp_enabled) {
+    attempts.push({
+      channel: "whatsapp",
+      recipientType: "client",
+      recipientName: policy.insured_name,
+      recipientAddress: policy.phone_e164 || "",
+      message: applyTemplate(DEFAULT_EXTENDED_SMS, vars),
+      missingReason: optedOut
+        ? "Client opted out of SMS/WhatsApp"
+        : policy.phone_e164
+          ? null
+          : "Client phone missing for WhatsApp",
+    });
+  }
+  if (settings.email_enabled && policy.email) {
+    const subject = `One-month cover reminder — ${policy.insured_name} (expires ${extensionExpiry || "—"})`;
+    const text = applyTemplate(DEFAULT_EXTENDED_SMS, vars);
+    attempts.push({
+      channel: "email",
+      recipientType: "client",
+      recipientName: policy.insured_name,
+      recipientAddress: policy.email,
+      message: { subject, text, html: text.replace(/\n/g, "<br>") },
+      missingReason: null,
+    });
+  }
+  return attempts;
+}
+
+/** Weekly reminder on/after extension cover expiry: day 0, 7, 14, … */
+function isExtendedWeeklyDue(daysUntilExtension) {
+  if (daysUntilExtension === null || daysUntilExtension === undefined || Number.isNaN(Number(daysUntilExtension))) {
+    return false;
+  }
+  const daysPast = -Number(daysUntilExtension);
+  return daysPast >= 0 && daysPast % 7 === 0;
+}
+
+async function deliverPolicyAttempts(policy, attempts, {
+  pool,
+  nextSerialId,
+  dbMode,
+  settings,
+  force,
+  delayMs,
+  summary,
+  runSuccesses,
+  milestone,
+  messageContains,
+  extended = false,
+}) {
+  const logMilestone = milestone != null ? milestone : policy.daysUntil;
+  for (const attempt of attempts) {
+    const sent = await alreadySent(pool, {
+      policyId: policy.id,
+      milestone: logMilestone,
+      channel: attempt.channel,
+      recipientType: attempt.recipientType,
+      recipientAddress: attempt.recipientAddress,
+      messageContains,
+    });
+    if (sent && !force) {
+      summary.alreadySent += 1;
+      continue;
+    }
+    summary.attempted += 1;
+    const result = await deliverAttempt(attempt, settings);
+    summary[result.status] = (summary[result.status] || 0) + 1;
+    const body =
+      attempt.channel === "email"
+        ? attempt.message?.text || ""
+        : String(attempt.message || "");
+    await insertLog(pool, nextSerialId, dbMode, {
+      policy_id: policy.id,
+      milestone: logMilestone,
+      channel: attempt.channel,
+      recipient_type: attempt.recipientType,
+      recipient_name: attempt.recipientName,
+      recipient_address: attempt.recipientAddress,
+      status: result.status,
+      error_message: result.error,
+      message_body: body,
+      provider_ref: result.providerRef,
+      delivery_status: result.deliveryStatus || result.status,
+      sent_at: result.status === "sent" ? new Date().toISOString() : null,
+    });
+    if (result.status === "sent") {
+      runSuccesses.push({
+        insuredName: policy.insured_name,
+        milestone: logMilestone,
+        channel: attempt.channel,
+        recipientType: attempt.recipientType,
+        recipientName: attempt.recipientName,
+        recipientAddress: attempt.recipientAddress,
+        extended,
+      });
+    }
+    if (attempt.channel === "email") {
+      await sleep(result.status === "sent" ? 700 : 2000);
+    } else if ((attempt.channel === "sms" || attempt.channel === "whatsapp") && delayMs && result.status === "sent") {
+      await sleep(delayMs);
+    }
+  }
+}
+
 async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, force = false } = {}) {
   const settings = await getSettings(pool);
   if (!force && !inQuietHours(settings)) {
@@ -856,14 +1023,39 @@ async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, fo
   const financiers = financiersRes.rows;
   const delayMs = Math.max(0, Math.floor(60000 / Math.max(1, Number(settings.sms_per_minute || 30))));
 
-  const due = policies.rows
-    .map((row) => ({ ...row, daysUntil: daysUntilRenewal(row.renewal_date, today) }))
-    .filter((row) => MILESTONES.includes(row.daysUntil));
+  const withDays = policies.rows.map((row) => {
+    const extensionExpiry = toDateOnly(row.extension_expiry_date);
+    return {
+      ...row,
+      daysUntil: daysUntilRenewal(row.renewal_date, today),
+      extension_expiry_date: extensionExpiry,
+      daysUntilExtension: extensionExpiry ? daysUntilRenewal(extensionExpiry, today) : null,
+    };
+  });
+
+  // Standard T-60/30/15/7/1 — skip Extended (one-month cover reminders instead)
+  const milestoneDue = withDays.filter(
+    (row) =>
+      (row.pipeline_stage || "Not contacted") !== "Extended" &&
+      MILESTONES.includes(row.daysUntil)
+  );
+
+  // Extended: weekly client SMS on/after extension cover expiry until pipeline changes
+  const extendedDue = withDays.filter(
+    (row) =>
+      (row.pipeline_stage || "") === "Extended" &&
+      row.extension_expiry_date &&
+      isExtendedWeeklyDue(row.daysUntilExtension)
+  );
+
+  const due = [...milestoneDue, ...extendedDue];
 
   const summary = {
     ranAt: new Date().toISOString(),
     today,
     duePolicies: due.length,
+    milestoneDue: milestoneDue.length,
+    extendedDue: extendedDue.length,
     attempted: 0,
     sent: 0,
     failed: 0,
@@ -871,58 +1063,24 @@ async function runRenewalReminderJob(pool, { nextSerialId, dbMode, onPersist, fo
     alreadySent: 0,
   };
   const runSuccesses = [];
+  const deliverCtx = { pool, nextSerialId, dbMode, settings, force, delayMs, summary, runSuccesses };
 
-  for (const policy of due) {
+  for (const policy of milestoneDue) {
     const attempts = buildAttemptsForPolicy(policy, financiers, settings);
-    for (const attempt of attempts) {
-      const sent = await alreadySent(pool, {
-        policyId: policy.id,
-        milestone: policy.daysUntil,
-        channel: attempt.channel,
-        recipientType: attempt.recipientType,
-        recipientAddress: attempt.recipientAddress,
-      });
-      if (sent && !force) {
-        summary.alreadySent += 1;
-        continue;
-      }
-      summary.attempted += 1;
-      const result = await deliverAttempt(attempt, settings);
-      summary[result.status] = (summary[result.status] || 0) + 1;
-      const body =
-        attempt.channel === "email"
-          ? attempt.message?.text || ""
-          : String(attempt.message || "");
-      await insertLog(pool, nextSerialId, dbMode, {
-        policy_id: policy.id,
-        milestone: policy.daysUntil,
-        channel: attempt.channel,
-        recipient_type: attempt.recipientType,
-        recipient_name: attempt.recipientName,
-        recipient_address: attempt.recipientAddress,
-        status: result.status,
-        error_message: result.error,
-        message_body: body,
-        provider_ref: result.providerRef,
-        delivery_status: result.deliveryStatus || result.status,
-        sent_at: result.status === "sent" ? new Date().toISOString() : null,
-      });
-      if (result.status === "sent") {
-        runSuccesses.push({
-          insuredName: policy.insured_name,
-          milestone: policy.daysUntil,
-          channel: attempt.channel,
-          recipientType: attempt.recipientType,
-          recipientName: attempt.recipientName,
-          recipientAddress: attempt.recipientAddress,
-        });
-      }
-      if (attempt.channel === "email") {
-        await sleep(result.status === "sent" ? 700 : 2000);
-      } else if ((attempt.channel === "sms" || attempt.channel === "whatsapp") && delayMs && result.status === "sent") {
-        await sleep(delayMs);
-      }
-    }
+    await deliverPolicyAttempts(policy, attempts, {
+      ...deliverCtx,
+      milestone: policy.daysUntil,
+      extended: false,
+    });
+  }
+  for (const policy of extendedDue) {
+    const attempts = buildAttemptsForExtendedPolicy(policy, settings);
+    await deliverPolicyAttempts(policy, attempts, {
+      ...deliverCtx,
+      milestone: policy.daysUntilExtension,
+      messageContains: policy.extension_expiry_date,
+      extended: true,
+    });
   }
 
   const failures = await pool.query(
@@ -1017,6 +1175,7 @@ function filterByWindow(policy, window) {
       return policy.status === "Active" && days >= 0 && days <= 30 && days > 15;
     case "t15":
       return policy.status === "Active" && days >= 0 && days <= 15;
+    case "today":
     case "due_today":
       return policy.status === "Active" && days === 0;
     case "overdue":
@@ -1043,9 +1202,11 @@ async function fetchDashboard(pool) {
       .length,
     later: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal > 60).length,
     overdue: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal < 0).length,
+    due_today: active.filter((p) => isDayCount(p.daysUntilRenewal) && p.daysUntilRenewal === 0).length,
     with_financier: active.filter((p) => p.financierNames.length > 0).length,
     quoted: policies.filter((p) => p.pipelineStage === "Quoted").length,
     awaiting_payment: policies.filter((p) => p.pipelineStage === "Awaiting payment").length,
+    extended: policies.filter((p) => p.pipelineStage === "Extended").length,
     bound: policies.filter((p) => p.pipelineStage === "Bound").length,
     lost: policies.filter((p) => p.pipelineStage === "Lost").length,
     premium_at_risk: Number(
@@ -2027,13 +2188,14 @@ function registerRenewalRoutes(app, deps) {
     try {
       const body = policyBodySchema.parse(req.body);
       const phoneE164 = normalizeKenyaPhone(body.phoneRaw);
+      const extensionExpiry = resolveExtensionExpiryDate(body.pipelineStage, body.extensionExpiryDate);
       const id = await nextSerialId(pool, "renewal_policies");
       const inserted = await pool.query(
         `INSERT INTO renewal_policies (
           id, insured_name, phone_raw, phone_e164, email, policy_number, insurer,
           renewal_date, car_registrations, financial_interest, status, notes,
-          pipeline_stage, premium, assigned_officer_id, relationship_manager, sms_opt_out, created_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          pipeline_stage, extension_expiry_date, premium, assigned_officer_id, relationship_manager, sms_opt_out, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         RETURNING *`,
         [
           id,
@@ -2049,6 +2211,7 @@ function registerRenewalRoutes(app, deps) {
           body.status,
           body.notes.trim(),
           body.pipelineStage,
+          extensionExpiry,
           body.premium ?? null,
           body.assignedOfficerId || null,
           body.relationshipManager.trim(),
@@ -2071,12 +2234,20 @@ function registerRenewalRoutes(app, deps) {
       const id = Number(req.params.id);
       const body = policyBodySchema.parse(req.body);
       const phoneE164 = normalizeKenyaPhone(body.phoneRaw);
+      const existing = await pool.query("SELECT extension_expiry_date, pipeline_stage FROM renewal_policies WHERE id = $1", [id]);
+      if (!existing.rows[0]) return res.status(404).json({ message: "Policy not found" });
+      const prevExpiry = existing.rows[0].extension_expiry_date;
+      const extensionExpiry = resolveExtensionExpiryDate(
+        body.pipelineStage,
+        body.extensionExpiryDate,
+        body.pipelineStage === "Extended" ? prevExpiry : null
+      );
       const updated = await pool.query(
         `UPDATE renewal_policies SET
           insured_name = $2, phone_raw = $3, phone_e164 = $4, email = $5, policy_number = $6,
           insurer = $7, renewal_date = $8, car_registrations = $9, financial_interest = $10,
-          status = $11, notes = $12, pipeline_stage = $13, premium = $14,
-          assigned_officer_id = $15, relationship_manager = $16, sms_opt_out = $17, updated_at = NOW()
+          status = $11, notes = $12, pipeline_stage = $13, extension_expiry_date = $14, premium = $15,
+          assigned_officer_id = $16, relationship_manager = $17, sms_opt_out = $18, updated_at = NOW()
          WHERE id = $1 RETURNING *`,
         [
           id,
@@ -2092,6 +2263,7 @@ function registerRenewalRoutes(app, deps) {
           body.status,
           body.notes.trim(),
           body.pipelineStage,
+          extensionExpiry,
           body.premium ?? null,
           body.assignedOfficerId || null,
           body.relationshipManager.trim(),
@@ -2133,7 +2305,8 @@ function registerRenewalRoutes(app, deps) {
       if (!nextDate) return res.status(400).json({ message: "Could not roll renewal date" });
       const updated = await pool.query(
         `UPDATE renewal_policies SET
-          renewal_date = $2, status = 'Active', pipeline_stage = 'Not contacted', updated_at = NOW()
+          renewal_date = $2, status = 'Renewed', pipeline_stage = 'Bound',
+          extension_expiry_date = NULL, updated_at = NOW()
          WHERE id = $1 RETURNING *`,
         [id, nextDate]
       );
