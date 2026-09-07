@@ -1,4 +1,5 @@
 const xlsx = require("xlsx");
+const { PIPELINE_STAGES } = require("./renewalOps");
 
 const HEADER_ALIASES = {
   insuredName: [
@@ -38,6 +39,7 @@ const HEADER_ALIASES = {
   policyNumber: ["Policy Number", "Policy No", "Policy #"],
   insurer: ["Insurer", "Insurance Company", "Underwriter"],
   premium: ["Premium", "Premium (KES)", "Last Premium", "Gross Premium"],
+  pipelineStage: ["Pipeline", "Pipeline Stage", "Stage"],
   relationshipManager: ["Relationship Manager", "RM", "Officer", "Account Manager"],
 };
 
@@ -144,6 +146,13 @@ function extractRowsFromWorksheet(worksheet) {
   return { rows, headerRowIndex };
 }
 
+function normalizePipelineStage(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  const found = PIPELINE_STAGES.find((stage) => stage.toLowerCase() === value.toLowerCase());
+  return found || null;
+}
+
 function parseRenewalRow(row) {
   const insuredName = String(pickValue(row, HEADER_ALIASES.insuredName) || "").trim();
   const contacts = String(pickValue(row, HEADER_ALIASES.contacts) || "").trim();
@@ -159,6 +168,8 @@ function parseRenewalRow(row) {
     const n = Number(String(premiumRaw).replace(/,/g, ""));
     if (Number.isFinite(n)) premium = n;
   }
+  const pipelineRaw = String(pickValue(row, HEADER_ALIASES.pipelineStage) || "").trim();
+  const pipelineStage = normalizePipelineStage(pipelineRaw);
   const relationshipManager = String(pickValue(row, HEADER_ALIASES.relationshipManager) || "").trim();
 
   return {
@@ -171,6 +182,8 @@ function parseRenewalRow(row) {
     policyNumber,
     insurer,
     premium,
+    pipelineStage,
+    pipelineRaw,
     relationshipManager,
   };
 }

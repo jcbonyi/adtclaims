@@ -1894,6 +1894,12 @@ function registerRenewalRoutes(app, deps) {
           missingEmail += 1;
           warnings.push({ row: excelRow, reason: "email missing — SMS/WhatsApp only until an email is added" });
         }
+        if (row.pipelineRaw && !row.pipelineStage) {
+          warnings.push({
+            row: excelRow,
+            reason: `pipeline "${row.pipelineRaw}" not recognized — use Not contacted, Quoted, Awaiting payment, Extended, Bound, or Lost`,
+          });
+        }
         dates.push(row.renewalDate);
         const key = policyMatchKey({
           insuredName: row.insuredName,
@@ -1944,6 +1950,9 @@ function registerRenewalRoutes(app, deps) {
       let updated = 0;
       for (const item of prepared) {
         const { row, phoneE164, match } = item;
+        const pipelineStage = row.pipelineStage || "Not contacted";
+        const extensionExpiry =
+          pipelineStage === "Extended" ? defaultExtensionExpiry(todayNairobi()) : null;
         if (match) {
           await pool.query(
             `UPDATE renewal_policies SET
@@ -1953,6 +1962,12 @@ function registerRenewalRoutes(app, deps) {
               car_registrations = $7, financial_interest = $8,
               premium = COALESCE($9, premium),
               relationship_manager = COALESCE(NULLIF($10, ''), relationship_manager),
+              pipeline_stage = COALESCE($11, pipeline_stage),
+              extension_expiry_date = CASE
+                WHEN $11 = 'Extended' AND extension_expiry_date IS NULL THEN $12::date
+                WHEN $11 IS NOT NULL AND $11 <> 'Extended' THEN NULL
+                ELSE extension_expiry_date
+              END,
               updated_at = NOW()
              WHERE id = $1`,
             [
@@ -1966,6 +1981,8 @@ function registerRenewalRoutes(app, deps) {
               row.financialInterest,
               row.premium,
               row.relationshipManager,
+              row.pipelineStage,
+              extensionExpiry,
             ]
           );
           updated += 1;
@@ -1975,8 +1992,8 @@ function registerRenewalRoutes(app, deps) {
             `INSERT INTO renewal_policies (
               id, insured_name, phone_raw, phone_e164, email, policy_number, insurer,
               renewal_date, car_registrations, financial_interest, status, premium,
-              relationship_manager, created_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Active',$11,$12,$13)`,
+              relationship_manager, pipeline_stage, extension_expiry_date, created_by
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Active',$11,$12,$13,$14,$15)`,
             [
               id,
               row.insuredName,
@@ -1990,6 +2007,8 @@ function registerRenewalRoutes(app, deps) {
               row.financialInterest,
               row.premium,
               row.relationshipManager || "",
+              pipelineStage,
+              extensionExpiry,
               req.user.id,
             ]
           );

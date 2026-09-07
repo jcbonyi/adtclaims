@@ -45,6 +45,7 @@ const TEMPLATE_COLUMNS = [
   "Insurer",
   "Policy Number",
   "Premium",
+  "Pipeline",
   "Relationship Manager",
 ];
 
@@ -96,7 +97,7 @@ async function buildRenewalsTemplateBuffer() {
 
   sheet.mergeCells(2, 1, 2, TEMPLATE_COLUMNS.length);
   sheet.getCell(2, 1).value =
-    "Required: Insured Name, Contacts (phone e.g. 722111333), Email, Policy Renewal date. Re-importing the same insured + vehicle regs + renewal date updates the existing row. Financial Interest (not N/A) also notifies the financier.";
+    "Required: Insured Name, Contacts (phone e.g. 722111333), Email, Policy Renewal date. Optional Pipeline: Not contacted | Quoted | Awaiting payment | Extended | Bound | Lost. Re-importing the same insured + vehicle regs + renewal date updates the existing row. Financial Interest (not N/A) also notifies the financier.";
   sheet.getCell(2, 1).font = { italic: true, size: 10 };
 
   const headerRow = 4;
@@ -118,6 +119,7 @@ async function buildRenewalsTemplateBuffer() {
     "CIC",
     "POL-001",
     "125000",
+    "Not contacted",
     "",
   ];
 
