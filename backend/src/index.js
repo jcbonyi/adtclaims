@@ -56,6 +56,7 @@ const {
   registerClaimsNotificationRoutes,
   notifyClaimCreated,
   notifyClaimStatusChange,
+  notifyClaimRemarkAdded,
   CLAIM_SETTINGS_SNAPSHOT_COLUMNS,
   CLAIM_LOG_SNAPSHOT_COLUMNS,
   loadSmtpFromDb,
@@ -2257,18 +2258,21 @@ app.patch(
         }
         await client.query("COMMIT");
         await maybePersistInMemorySnapshot();
+        const notifyDeps = { nextSerialId, dbMode, onPersist: maybePersistInMemorySnapshot };
         if (oldStatus !== payload.status) {
-          notifyClaimStatusChange(
-            pool,
-            { nextSerialId, dbMode, onPersist: maybePersistInMemorySnapshot },
-            {
-              claimId: Number(req.params.id),
-              fromStatus: oldStatus,
-              toStatus: payload.status,
-              actor: req.user,
-              remark: payload.remark,
-            }
-          ).catch((err) => console.error("Claim status notification failed:", err));
+          notifyClaimStatusChange(pool, notifyDeps, {
+            claimId: Number(req.params.id),
+            fromStatus: oldStatus,
+            toStatus: payload.status,
+            actor: req.user,
+            remark: payload.remark,
+          }).catch((err) => console.error("Claim status notification failed:", err));
+        } else if (payload.remark) {
+          notifyClaimRemarkAdded(pool, notifyDeps, {
+            claimId: Number(req.params.id),
+            actor: req.user,
+            remark: payload.remark,
+          }).catch((err) => console.error("Claim remark notification failed:", err));
         }
         return res.json({ ok: true });
       } catch (error) {
@@ -2313,6 +2317,15 @@ app.post(
         );
       }
       await maybePersistInMemorySnapshot();
+      notifyClaimRemarkAdded(
+        pool,
+        { nextSerialId, dbMode, onPersist: maybePersistInMemorySnapshot },
+        {
+          claimId: Number(req.params.id),
+          actor: req.user,
+          remark,
+        }
+      ).catch((err) => console.error("Claim remark notification failed:", err));
       return res.status(201).json(inserted.rows[0]);
     } catch (error) {
       return res.status(400).json({ message: error.message });

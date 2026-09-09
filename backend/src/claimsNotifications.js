@@ -507,6 +507,36 @@ async function notifyClaimStatusChange(pool, deps, { claimId, fromStatus, toStat
   await deps.onPersist?.();
 }
 
+async function notifyClaimRemarkAdded(pool, deps, { claimId, actor, remark }) {
+  const text = String(remark || "").trim();
+  if (!text) return { skipped: true };
+  const settings = await getSettings(pool);
+  if (!settings.email_enabled) return { skipped: true };
+
+  const claim = toClientClaim(await loadClaim(pool, claimId));
+  const to = claimsOpsRecipients(settings.ops_email_list);
+  if (!claim || !to.length) return { skipped: true };
+
+  const extra = {
+    intro: "A follow-up remark was added on the claims register.",
+    actorName: actor?.name,
+    remark: text,
+    garage: claim.garage,
+    daysOpen: claim.daysOpen,
+    toStatus: claim.claimStatus,
+  };
+  await deliverAndLog(pool, deps, {
+    claimId,
+    eventType: "remark_added",
+    channel: "email",
+    to,
+    body: text.slice(0, 240),
+    sendFn: () => sendClaimEventEmail({ to, event: "remark_added", claim, extra }),
+  });
+  await deps.onPersist?.();
+  return { sent: true };
+}
+
 async function collectOpsQueues(pool) {
   const claimsRes = await pool.query(`
     SELECT id, insurer, insured_name, registration_number, reported_to_broker_date,
@@ -874,5 +904,6 @@ module.exports = {
   loadSmtpFromDb,
   notifyClaimCreated,
   notifyClaimStatusChange,
+  notifyClaimRemarkAdded,
   getSettings,
 };

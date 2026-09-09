@@ -210,6 +210,7 @@ export function Dashboard({ onOpenPolicy }) {
               <thead>
                 <tr>
                   <th>Insured</th>
+                  <th>Vehicles</th>
                   <th>Milestone</th>
                   <th>Channel</th>
                   <th>Recipient</th>
@@ -220,6 +221,7 @@ export function Dashboard({ onOpenPolicy }) {
                 {failures.slice(0, 8).map((row) => (
                   <tr key={row.id}>
                     <td>{row.insuredName}</td>
+                    <td>{row.carRegistrations || "—"}</td>
                     <td>{formatMilestoneLabel(row.milestone)}</td>
                     <td className="rn-channel">{row.channel}</td>
                     <td>

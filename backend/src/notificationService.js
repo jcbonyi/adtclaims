@@ -534,21 +534,23 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
 
   const successLines = successes.slice(0, 100).map((s) => {
     const name = s.insuredName || s.recipientName || "—";
+    const regs = s.carRegistrations || s.car_registrations || "—";
     const milestone =
       s.extended || (typeof s.milestone === "number" && s.milestone <= 0)
         ? `Ext+${Math.max(0, -(Number(s.milestone) || 0))}d`
         : `T-${s.milestone}`;
     const channel = String(s.channel || "").toUpperCase() || "—";
     const who = `${s.recipientType || "recipient"} ${s.recipientAddress || "(no address)"}`;
-    return `• ${name} | ${milestone} | ${channel} → ${who}`;
+    return `• ${name} | ${regs} | ${milestone} | ${channel} → ${who}`;
   });
 
   const failureLines = failures.slice(0, 80).map((f) => {
+    const regs = f.carRegistrations || f.car_registrations || "—";
     const milestone =
       typeof f.milestone === "number" && f.milestone <= 0
         ? `Ext+${Math.max(0, -f.milestone)}d`
         : `T-${f.milestone}`;
-    return `• ${f.insuredName} | ${milestone} | ${String(f.channel || "").toUpperCase()} → ${f.recipientType} ${f.recipientAddress || "(no address)"} | ${f.errorMessage || f.status}`;
+    return `• ${f.insuredName} | ${regs} | ${milestone} | ${String(f.channel || "").toUpperCase()} → ${f.recipientType} ${f.recipientAddress || "(no address)"} | ${f.errorMessage || f.status}`;
   });
 
   const text = [
@@ -575,12 +577,14 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
     .slice(0, 100)
     .map((s) => {
       const name = s.insuredName || s.recipientName || "—";
+      const regs = s.carRegistrations || s.car_registrations || "—";
       const milestone =
         s.extended || (typeof s.milestone === "number" && s.milestone <= 0)
           ? `Ext+${Math.max(0, -(Number(s.milestone) || 0))}d`
           : `T-${s.milestone ?? "—"}`;
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${regs}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${milestone}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${String(s.channel || "").toUpperCase()}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${s.recipientType || ""} ${s.recipientAddress || ""}</td>
@@ -591,12 +595,14 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
   const htmlFailRows = failures
     .slice(0, 80)
     .map((f) => {
+      const regs = f.carRegistrations || f.car_registrations || "—";
       const milestone =
         typeof f.milestone === "number" && f.milestone <= 0
           ? `Ext+${Math.max(0, -f.milestone)}d`
           : `T-${f.milestone ?? "—"}`;
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${f.insuredName || "—"}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${regs}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${milestone}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${String(f.channel || "").toUpperCase()}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0">${f.recipientType || ""} ${f.recipientAddress || ""}</td>
@@ -621,7 +627,8 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
         successCount
           ? `<table style="border-collapse:collapse;width:100%;font-size:13px">
               <thead><tr style="background:#ecfdf5;text-align:left">
-                <th style="padding:6px 8px">Insured</th><th style="padding:6px 8px">Milestone</th>
+                <th style="padding:6px 8px">Insured</th><th style="padding:6px 8px">Vehicles</th>
+                <th style="padding:6px 8px">Milestone</th>
                 <th style="padding:6px 8px">Channel</th><th style="padding:6px 8px">Recipient</th>
               </tr></thead>
               <tbody>${htmlSuccessRows}</tbody>
@@ -633,7 +640,8 @@ async function sendRenewalFailureDigest({ to, failures = [], successes = [], sum
         failCount
           ? `<table style="border-collapse:collapse;width:100%;font-size:13px">
               <thead><tr style="background:#fef2f2;text-align:left">
-                <th style="padding:6px 8px">Insured</th><th style="padding:6px 8px">Milestone</th>
+                <th style="padding:6px 8px">Insured</th><th style="padding:6px 8px">Vehicles</th>
+                <th style="padding:6px 8px">Milestone</th>
                 <th style="padding:6px 8px">Channel</th><th style="padding:6px 8px">Recipient</th>
                 <th style="padding:6px 8px">Error</th>
               </tr></thead>
@@ -675,6 +683,7 @@ async function sendClaimEventEmail({ to, event, claim, extra = {} }) {
   const titles = {
     claim_created: `New claim: ${insured}`,
     status_change: `Claim status: ${insured} → ${extra.toStatus || claim.claimStatus || claim.claim_status}`,
+    remark_added: `Claim remark: ${insured}`,
     ra_issued: `RA issued: ${insured}`,
     released: `Vehicle released: ${insured}`,
     closed: `Claim closed: ${insured}`,

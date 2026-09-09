@@ -1017,6 +1017,7 @@ async function deliverPolicyAttempts(policy, attempts, {
     if (result.status === "sent") {
       runSuccesses.push({
         insuredName: policy.insured_name,
+        carRegistrations: policy.car_registrations || "",
         milestone: logMilestone,
         channel: attempt.channel,
         recipientType: attempt.recipientType,
@@ -1771,7 +1772,13 @@ function registerRenewalRoutes(app, deps) {
         );
       }
       await onPersist?.();
-      return res.json(rowToLog({ ...inserted, insured_name: row.insured_name }));
+      return res.json(
+        rowToLog({
+          ...inserted,
+          insured_name: row.insured_name,
+          car_registrations: row.car_registrations,
+        })
+      );
     } catch (err) {
       console.error(err);
       return res.status(500).json({ message: "Retry failed" });
@@ -2236,7 +2243,7 @@ function registerRenewalRoutes(app, deps) {
       );
       if (!result.rows[0]) return res.status(404).json({ message: "Policy not found" });
       const logs = await pool.query(
-        `SELECT l.*, p.insured_name FROM renewal_notification_logs l
+        `SELECT l.*, p.insured_name, p.car_registrations FROM renewal_notification_logs l
          JOIN renewal_policies p ON p.id = l.policy_id
          WHERE l.policy_id = $1 ORDER BY l.created_at DESC`,
         [id]

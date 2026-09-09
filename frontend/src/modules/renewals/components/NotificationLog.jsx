@@ -72,6 +72,7 @@ export function NotificationLog() {
                 <tr>
                   <th>When</th>
                   <th>Insured</th>
+                  <th>Vehicles</th>
                   <th>Milestone</th>
                   <th>Channel</th>
                   <th>Recipient</th>
@@ -84,6 +85,7 @@ export function NotificationLog() {
                   <tr key={row.id}>
                     <td>{row.createdAt ? new Date(row.createdAt).toLocaleString() : "—"}</td>
                     <td>{row.insuredName}</td>
+                    <td>{row.carRegistrations || "—"}</td>
                     <td>{formatMilestoneLabel(row.milestone)}</td>
                     <td className="rn-channel">{row.channel}</td>
                     <td>

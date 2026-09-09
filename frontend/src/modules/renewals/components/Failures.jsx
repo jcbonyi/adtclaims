@@ -71,6 +71,7 @@ export function Failures({ onChanged }) {
               <thead>
                 <tr>
                   <th>Insured</th>
+                  <th>Vehicles</th>
                   <th>Milestone</th>
                   <th>Channel</th>
                   <th>Recipient</th>
@@ -87,6 +88,7 @@ export function Failures({ onChanged }) {
                         {row.insuredName}
                       </button>
                     </td>
+                    <td>{row.carRegistrations || "—"}</td>
                     <td>{formatMilestoneLabel(row.milestone)}</td>
                     <td className="rn-channel">{row.channel}</td>
                     <td>

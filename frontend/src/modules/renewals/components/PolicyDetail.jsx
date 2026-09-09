@@ -473,6 +473,7 @@ export function PolicyDetail() {
                   <thead>
                     <tr>
                       <th>When</th>
+                      <th>Vehicles</th>
                       <th>Milestone</th>
                       <th>Channel</th>
                       <th>Recipient</th>
@@ -485,6 +486,7 @@ export function PolicyDetail() {
                     {detail.notifications.map((n) => (
                       <tr key={n.id}>
                         <td>{n.createdAt ? new Date(n.createdAt).toLocaleString() : "—"}</td>
+                        <td>{n.carRegistrations || "—"}</td>
                         <td>{formatMilestoneLabel(n.milestone)}</td>
                         <td className="rn-channel">{n.channel}</td>
                         <td>{n.recipientType}: {n.recipientAddress || n.recipientName || "—"}</td>
